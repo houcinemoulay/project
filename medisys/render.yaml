@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: medisys-hospital
+    env: php
+    plan: free
+    buildCommand: ./render-build.sh
+    startCommand: php artisan migrate --force && php artisan db:seed --force && apache2-foreground
+    envVars:
+      - key: APP_KEY
+        generateValue: true
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: false
+      - key: APP_URL
+        fromContext: git
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DATABASE_URL
+        fromDatabase:
+          name: medisys-db
+          property: connectionString
+      - key: SESSION_DRIVER
+        value: database
+      - key: CACHE_STORE
+        value: database
+
+databases:
+  - name: medisys-db
+    plan: free

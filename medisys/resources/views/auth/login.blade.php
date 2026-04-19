@@ -145,6 +145,9 @@ body {
       <a href="/public-booking" class="nfc-btn" style="text-decoration:none; border-color:#533483; color:#533483;">
         <i class="fas fa-calendar-plus"></i> Book Appointment (Public)
       </a>
+      <a href="/contact" style="display:inline-block; margin-top:16px; color:#64748b; font-size:13px; text-decoration:none; font-weight:600; transition:color 0.2s;" onmouseover="this.style.color='#0f3460'" onmouseout="this.style.color='#64748b'">
+        <i class="fas fa-envelope"></i> Contact Support
+      </a>
     </div>
   </div>
 </div>

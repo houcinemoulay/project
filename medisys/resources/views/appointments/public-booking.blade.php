@@ -74,7 +74,10 @@ p.subtitle { color: #64748b; text-align: center; margin-bottom: 40px; }
 
 <nav class="navbar">
   <div class="logo"><i class="fas fa-hospital-alt"></i> SHIFA</div>
-  <a href="/login" style="text-decoration:none; color:#64748b; font-weight:600; font-size:14px;"><i class="fas fa-arrow-left"></i> Back to Login</a>
+  <div style="display:flex; gap:20px; align-items:center;">
+    <a href="/contact" style="text-decoration:none; color:#64748b; font-weight:600; font-size:14px;"><i class="fas fa-envelope"></i> Contact Us</a>
+    <a href="/login" style="text-decoration:none; color:#64748b; font-weight:600; font-size:14px;"><i class="fas fa-arrow-left"></i> Back to Login</a>
+  </div>
 </nav>
 
 <div class="container">

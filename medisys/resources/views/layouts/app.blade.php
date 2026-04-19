@@ -266,6 +266,13 @@ table.data-table tr:hover td { background: #fafbff; }
         <span class="icon"><i class="fas fa-flask"></i></span> {{ __('Laboratories') }}
       </a>
     </div>
+
+    <div class="nav-section-label">{{ __('Support') }}</div>
+    <div class="nav-item">
+      <a href="/contact" class="nav-link {{ request()->is('contact') ? 'active' : '' }}" id="nav-contact">
+        <span class="icon"><i class="fas fa-envelope"></i></span> {{ __('Contact Us') }}
+      </a>
+    </div>
   </nav>
 
   <div class="sidebar-footer">

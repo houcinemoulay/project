@@ -1,11 +1,15 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\ContactController;
 
 Route::get('/', fn() => redirect('/login'));
 Route::get('/login', fn() => view('auth.login'));
 Route::get('/public-booking', fn() => view('appointments.public-booking'));
 Route::get('/lang/{lang}', [App\Http\Controllers\LanguageController::class, 'switch'])->name('lang.switch');
+
+Route::get('/contact', [ContactController::class, 'show'])->name('contact.show');
+Route::post('/contact', [ContactController::class, 'send'])->name('contact.send');
 
 // Staff dashboard routes
 Route::get('/dashboard',       fn() => view('dashboard'));
