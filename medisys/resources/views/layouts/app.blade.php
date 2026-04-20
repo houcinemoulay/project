@@ -251,6 +251,17 @@ table.data-table tr:hover td { background: #fafbff; }
     </div>
 
     <div class="nav-section-label">{{ __('Administration') }}</div>
+    <div class="nav-item admin-only" style="display:none;">
+      <a href="/admin/contact-messages" class="nav-link {{ request()->is('admin/contact-messages*') ? 'active' : '' }}" id="nav-contact-messages">
+        <span class="icon"><i class="fas fa-envelope-open-text"></i></span> {{ __('Contact Messages') }}
+        <span id="nav-contact-badge" style="display:none;margin-left:auto;background:var(--accent);color:white;border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700;"></span>
+      </a>
+    </div>
+    <div class="nav-item admin-only" style="display:none;">
+      <a href="/admin/fraud-attempts" class="nav-link {{ request()->is('admin/fraud-attempts*') ? 'active' : '' }}" id="nav-fraud-attempts">
+        <span class="icon"><i class="fas fa-shield-alt"></i></span> {{ __('Fraud Attempts') }}
+      </a>
+    </div>
     <div class="nav-item">
       <a href="/doctors" class="nav-link {{ request()->is('doctors*') ? 'active' : '' }}" id="nav-doctors">
         <span class="icon"><i class="fas fa-user-md"></i></span> {{ __('Doctors') }}
@@ -273,7 +284,8 @@ table.data-table tr:hover td { background: #fafbff; }
         <span class="icon"><i class="fas fa-envelope"></i></span> {{ __('Contact Us') }}
       </a>
     </div>
-  </nav>
+
+      </nav>
 
   <div class="sidebar-footer">
     <div class="user-card">
@@ -337,10 +349,24 @@ table.data-table tr:hover td { background: #fafbff; }
   </div>
 </div>
 
+
+<script>window.serverUser = @json(auth()->user() ? auth()->user()->only(['id', 'name', 'role']) : null);</script>
 <script>
 // Authentication check and sidebar population
 document.addEventListener('DOMContentLoaded', () => {
-  const userJson = localStorage.getItem('auth_user');
+  let userJson = localStorage.getItem('auth_user');
+  let user = null;
+
+  if (userJson) {
+    try {
+      user = JSON.parse(userJson);
+    } catch(e) { console.error("Error parsing auth_user", e); }
+  }
+
+  // Use server-side user if localStorage is missing or role mismatch
+  if (!user && window.serverUser) {
+    user = window.serverUser;
+  }
   
   // Theme init
   if (localStorage.getItem('theme') === 'dark') {
@@ -349,9 +375,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (icon) icon.className = 'fas fa-sun';
   }
 
-  if (userJson) {
+  if (user) {
     try {
-      const user = JSON.parse(userJson);
       document.getElementById('sidebar-name').textContent = user.name;
       document.getElementById('sidebar-role').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
       
@@ -362,10 +387,32 @@ document.addEventListener('DOMContentLoaded', () => {
         av.textContent = user.name.charAt(0).toUpperCase();
       }
       
-      // Hide admin-only links for doctors
-      if (user.role === 'doctor') {
-        document.querySelectorAll('.sidebar-nav .nav-section-label:last-of-type, #nav-doctors, #nav-pharmacies, #nav-laboratories')
+      // Show/hide role-specific nav items
+      if (user.role === 'admin') {
+        // Show all admin-only items
+        document.querySelectorAll('.admin-only').forEach(el => {
+          el.style.display = '';
+        });
+        // Load unread contact message count
+        fetch('/api/contact-messages', {
+          headers: {'Content-Type':'application/json','Accept':'application/json','Authorization':'Bearer '+(localStorage.getItem('auth_token')||'')}
+        }).then(r=>r.json()).then(data=>{
+          if (data.success && data.data.unread > 0) {
+            const badge = document.getElementById('nav-contact-badge');
+            if (badge) { badge.textContent = data.data.unread; badge.style.display=''; }
+          }
+        }).catch(()=>{});
+      } else if (user.role === 'doctor') {
+        document.querySelectorAll('.admin-only').forEach(el => {
+          el.style.display = 'none';
+        });
+        document.querySelectorAll('#nav-doctors, #nav-pharmacies, #nav-laboratories')
           .forEach(el => el.style.display = 'none');
+      } else {
+        // Other roles: hide admin items
+        document.querySelectorAll('.admin-only').forEach(el => {
+          el.style.display = 'none';
+        });
       }
     } catch(e) {}
   }
@@ -429,6 +476,10 @@ async function nfcLogin() {
 // Allow pressing Enter in NFC input
 document.getElementById('nfc-uid-input').addEventListener('keydown', e => { if (e.key === 'Enter') nfcLogin(); });
 </script>
+
+<!-- Google reCAPTCHA -->
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+
 @stack('scripts')
 </body>
 </html>

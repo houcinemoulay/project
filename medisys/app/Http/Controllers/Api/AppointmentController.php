@@ -132,15 +132,49 @@ class AppointmentController extends Controller
 
     public function publicBook(Request $request)
     {
-        $validated = $request->validate([
+        // Honeypot check — bots fill hidden fields
+        if ($request->filled('website') || $request->filled('confirm_email')) {
+            return response()->json(['success' => false, 'message' => 'Invalid request.'], 403);
+        }
+
+        $rules = [
             'doctor_id'    => 'required|exists:doctors,id',
             'scheduled_at' => 'required|date|after:now',
-            'guest_name'   => 'required|string|max:255',
-            'guest_phone'  => 'required|string|max:20',
+            'guest_name'   => 'required|string|min:2|max:255',
+            'guest_phone'  => ['required', 'string', 'max:20', 'regex:/^[0-9+\-\s\(\)]{7,20}$/'],
             'reason'       => 'nullable|string|max:500',
-        ]);
+        ];
 
-        // Same checks as store()
+        // Require reCAPTCHA if configured
+        $recaptchaSecret = config('services.recaptcha.secret');
+        if ($recaptchaSecret) {
+            $rules['g-recaptcha-response'] = 'required|string';
+        }
+
+        $validated = $request->validate($rules);
+
+        // Verify reCAPTCHA with Google
+        if ($recaptchaSecret && $request->filled('g-recaptcha-response')) {
+            $verify = @file_get_contents(
+                "https://www.google.com/recaptcha/api/siteverify?secret={$recaptchaSecret}"
+                . "&response=" . urlencode($request->input('g-recaptcha-response'))
+                . "&remoteip=" . $request->ip()
+            );
+            $keys = $verify ? json_decode($verify, true) : null;
+            if (!$keys || !($keys['success'] ?? false)) {
+                return response()->json(['success' => false, 'message' => 'reCAPTCHA verification failed.'], 422);
+            }
+        }
+
+        // Check duplicate booking: same phone within 5 minutes
+        $recentByPhone = Appointment::where('guest_phone', $validated['guest_phone'])
+            ->where('created_at', '>', now()->subMinutes(5))
+            ->exists();
+        if ($recentByPhone) {
+            return response()->json(['success' => false, 'message' => 'A booking with this phone number was recently submitted. Please wait a few minutes.'], 429);
+        }
+
+        // Check slot availability
         $isTaken = Appointment::where('doctor_id', $validated['doctor_id'])
             ->where('scheduled_at', $validated['scheduled_at'])
             ->where('status', '!=', 'cancelled')
@@ -154,12 +188,12 @@ class AppointmentController extends Controller
         if ($doc->working_hours_start && ($time < $doc->working_hours_start || $time > $doc->working_hours_end)) return response()->json(['success'=>false, 'message'=>"Outside hours"], 422);
 
         $appointment = Appointment::create([
-            'doctor_id' => $validated['doctor_id'],
+            'doctor_id'    => $validated['doctor_id'],
             'scheduled_at' => $validated['scheduled_at'],
-            'guest_name' => $validated['guest_name'],
-            'guest_phone' => $validated['guest_phone'],
-            'reason' => $validated['reason'],
-            'status' => 'pending',
+            'guest_name'   => htmlspecialchars($validated['guest_name'], ENT_QUOTES, 'UTF-8'),
+            'guest_phone'  => preg_replace('/[^0-9+\-\s()]/', '', $validated['guest_phone']),
+            'reason'       => isset($validated['reason']) ? htmlspecialchars($validated['reason'], ENT_QUOTES, 'UTF-8') : null,
+            'status'       => 'pending',
         ]);
 
         return response()->json(['success' => true, 'message' => 'Guest appointment requested.']);

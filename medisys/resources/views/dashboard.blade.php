@@ -23,6 +23,10 @@
     <div class="stat-icon purple"><i class="fas fa-prescription"></i></div>
     <div><div class="stat-value" id="stat-ordonnances">—</div><div class="stat-label">Total Prescriptions</div></div>
   </div>
+  <div class="stat-card admin-card" id="stat-card-contact-messages" style="display:none;">
+    <div class="stat-icon" style="background:linear-gradient(135deg,#e94560,#f43f5e);color:white;"><i class="fas fa-envelope-open-text"></i></div>
+    <div><div class="stat-value" id="stat-contact-messages">—</div><div class="stat-label">Contact Messages</div></div>
+  </div>
 
   <!-- Admin Specific -->
   <div class="stat-card admin-card" id="stat-card-total-apps" style="display:none;">
@@ -89,6 +93,7 @@
     </div>
   </div>
 </div>
+
 
 <!-- Operations / Revenue per Doctor (Admin only) -->
 <div id="operations-section" class="card" style="margin-top:24px;display:none;">
@@ -211,6 +216,7 @@ async function loadDashboard() {
       document.getElementById('stat-rev-apps').textContent = (data.total_appointment_revenue || 0).toLocaleString();
       document.getElementById('stat-rev-ords').textContent = (data.total_ordonnance_revenue || 0).toLocaleString();
       document.getElementById('stat-revenue').textContent = data.total_revenue.toLocaleString();
+      document.getElementById('stat-contact-messages').textContent = data.contact_messages_unread;
 
       document.getElementById('operations-section').style.display = 'block';
       document.getElementById('ops-total-count').textContent = data.total_ordonnances + data.total_appointments;
@@ -342,6 +348,34 @@ async function saveFinancials() {
     console.error(e);
   }
 }
+
+
+// Update loadDashboard to show admin-only elements
+const originalLoadDashboard = loadDashboard;
+loadDashboard = async function() {
+  await originalLoadDashboard();
+  
+  // Show admin-only elements for admin users
+  const userJson = localStorage.getItem('auth_user');
+  let user = null;
+  if (userJson) {
+    try { user = JSON.parse(userJson); } catch(e) {}
+  }
+  if (!user && window.serverUser) user = window.serverUser;
+
+  if (user) {
+    try {
+      if (user.role === 'admin') {
+        // Show admin-only elements
+        document.querySelectorAll('.admin-card, .admin-only').forEach(el => {
+          el.style.display = el.tagName === 'DIV' ? (el.classList.contains('admin-card') ? 'block' : 'flex') : 'block';
+        });
+      }
+    } catch (e) {
+      console.error('Error checking user role:', e);
+    }
+  }
+};
 
 loadDashboard();
 </script>

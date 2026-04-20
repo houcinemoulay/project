@@ -15,13 +15,21 @@ class ContactMessage extends Model
         'subject',
         'message',
         'user_id',
+        'status',
         'user_role',
-        'is_read',
     ];
 
     protected $casts = [
-        'is_read' => 'boolean',
+        'status' => 'string',
     ];
+
+    /**
+     * Accessor: is_read maps to status for view compatibility.
+     */
+    public function getIsReadAttribute(): bool
+    {
+        return $this->status === 'read';
+    }
 
     public function user()
     {
@@ -31,26 +39,26 @@ class ContactMessage extends Model
     public function getRoleLabelAttribute(): string
     {
         return match($this->user_role) {
-            'admin' => 'Admin',
-            'doctor' => 'Doctor',
-            'patient' => 'Patient',
+            'admin'    => 'Admin',
+            'doctor'   => 'Doctor',
+            'patient'  => 'Patient',
             'pharmacy' => 'Pharmacy',
-            'lab' => 'Laboratory',
-            'nurse' => 'Nurse',
-            default => 'User without card',
+            'lab'      => 'Laboratory',
+            'nurse'    => 'Nurse',
+            default    => 'Guest',
         };
     }
 
     public function getRoleColorAttribute(): string
     {
         return match($this->user_role) {
-            'admin' => 'danger',
-            'doctor' => 'success',
-            'patient' => 'primary',
+            'admin'    => 'danger',
+            'doctor'   => 'success',
+            'patient'  => 'primary',
             'pharmacy' => 'warning',
-            'lab' => 'info',
-            'nurse' => 'secondary',
-            default => 'dark',
+            'lab'      => 'info',
+            'nurse'    => 'secondary',
+            default    => 'dark',
         };
     }
 }

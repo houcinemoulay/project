@@ -24,7 +24,21 @@
                 </div>
             </div>
         </div>
-        <div class="card-body" style="padding: 0;">
+        <div class="card-body">
+            <!-- Filters -->
+            <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+                <form method="GET" style="display: flex; gap: 12px; flex: 1; min-width: 300px;">
+                    <select name="status" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: white;">
+                        <option value="all" {{ $status == 'all' ? 'selected' : '' }}>All Messages</option>
+                        <option value="new" {{ $status == 'new' ? 'selected' : '' }}>New Messages</option>
+                        <option value="read" {{ $status == 'read' ? 'selected' : '' }}>Read Messages</option>
+                    </select>
+                    <input type="text" name="search" placeholder="Search email or subject..." value="{{ $search }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; flex: 1;">
+                    <button type="submit" class="btn btn-primary">Filter</button>
+                    <a href="{{ route('admin.contact-messages.index') }}" class="btn btn-outline">Clear</a>
+                </form>
+            </div>
+
             @if(session('success'))
                 <div style="background: #f0fdf4; color: #166534; padding: 16px; border-radius: 0; margin: 0; border-left: 4px solid #22c55e; display: flex; align-items: center; gap: 12px;">
                     <i class="fas fa-check-circle" style="font-size: 20px;"></i>
@@ -47,9 +61,9 @@
                     </thead>
                     <tbody>
                         @forelse($messages as $message)
-                            <tr style="border-bottom: 1px solid var(--border); {{ !$message->is_read ? 'background: #fef3c7;' : '' }}">
+                            <tr style="border-bottom: 1px solid var(--border); {{ $message->status === 'new' ? 'background: #fef3c7;' : '' }}">
                                 <td style="padding: 16px;">
-                                    @if(!$message->is_read)
+                                    @if($message->status === 'new')
                                         <span style="background: var(--accent); color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">
                                             NEW
                                         </span>
@@ -69,9 +83,23 @@
                                     {{ $message->email }}
                                 </td>
                                 <td style="padding: 16px;">
-                                    <span style="background: var(--{{ $message->role_color }}); color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">
-                                        {{ $message->role_label }}
-                                    </span>
+                                    @if($message->user)
+                                        <span style="background: 
+                                            @switch($message->user->role)
+                                                @case('admin') var(--danger) @break
+                                                @case('doctor') var(--success) @break
+                                                @case('patient') var(--primary) @break
+                                                @case('pharmacy') var(--warning) @break
+                                                @case('lab') var(--info) @break
+                                                @default var(--secondary) @endswitch
+                                            ; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">
+                                            {{ ucfirst($message->user->role) }}
+                                        </span>
+                                    @else
+                                        <span style="background: var(--secondary); color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">
+                                            Guest
+                                        </span>
+                                    @endif
                                 </td>
                                 <td style="padding: 16px; font-weight: 500;">
                                     {{ Str::limit($message->subject, 50) }}
@@ -87,7 +115,7 @@
                                            title="View Message">
                                             <i class="fas fa-eye"></i>
                                         </a>
-                                        @if($message->is_read)
+                                        @if($message->status === 'read')
                                             <form method="POST" action="{{ route('admin.contact-messages.mark-unread', $message) }}" style="display: inline;">
                                                 @csrf
                                                 <button type="submit" class="btn btn-sm btn-warning" 

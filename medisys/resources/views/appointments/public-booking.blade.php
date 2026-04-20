@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SHIFA — Public Booking</title>
+<meta name="description" content="Book an appointment at SHIFA Hospital quickly and easily without an account.">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
@@ -68,6 +69,13 @@ p.subtitle { color: #64748b; text-align: center; margin-bottom: 40px; }
 .alert { padding: 16px; border-radius: 12px; margin-bottom: 24px; font-size: 14px; display: none; }
 .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
 .alert-error { background: #fff1f2; color: #9f1239; border: 1px solid #fecdd3; }
+
+/* Security notice */
+.security-notice {
+  background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 20px; font-size: 12px; color: #0369a1;
+  display: flex; align-items: center; gap: 8px;
+}
 </style>
 </head>
 <body>
@@ -85,30 +93,42 @@ p.subtitle { color: #64748b; text-align: center; margin-bottom: 40px; }
     <h1>Book an Appointment</h1>
     <p class="subtitle">Quick and easy booking without an account</p>
 
+    <div class="security-notice">
+      <i class="fas fa-lock"></i>
+      <span>This form is protected against spam and duplicate bookings.</span>
+    </div>
+
     <div class="alert alert-success" id="success-msg"></div>
     <div class="alert alert-error" id="error-msg"></div>
 
     <form id="booking-form">
+      {{-- Honeypot fields — hidden from humans, filled by bots --}}
+      <div style="display:none; position:absolute; left:-9999px;" aria-hidden="true">
+        <input type="text" name="website" id="hp_website" value="" tabindex="-1" autocomplete="off">
+        <input type="email" name="confirm_email" id="hp_confirm_email" value="" tabindex="-1" autocomplete="off">
+      </div>
+
       <div class="grid">
         <div class="form-group">
-          <label class="form-label">Your Full Name</label>
-          <input type="text" id="guest_name" class="form-control" placeholder="John Doe" required>
+          <label class="form-label" for="guest_name">Your Full Name</label>
+          <input type="text" id="guest_name" class="form-control" placeholder="John Doe" required minlength="2" maxlength="255">
         </div>
         <div class="form-group">
-          <label class="form-label">Phone Number</label>
-          <input type="text" id="guest_phone" class="form-control" placeholder="0555 XX XX XX" required>
+          <label class="form-label" for="guest_phone">Phone Number</label>
+          <input type="tel" id="guest_phone" class="form-control" placeholder="0555 XX XX XX" required
+                 pattern="^[0-9+\-\s\(\)]{7,20}$" title="Enter a valid phone number (7-20 digits)">
         </div>
       </div>
 
       <div class="form-group">
-        <label class="form-label">Select Doctor</label>
+        <label class="form-label" for="doctor_id">Select Doctor</label>
         <select id="doctor_id" class="form-control" required>
           <option value="">Choose a doctor...</option>
         </select>
       </div>
 
       <div class="form-group">
-        <label class="form-label">Select Date</label>
+        <label class="form-label" for="booking_date">Select Date</label>
         <input type="date" id="booking_date" class="form-control" min="<?= date('Y-m-d') ?>" required>
       </div>
 
@@ -119,9 +139,19 @@ p.subtitle { color: #64748b; text-align: center; margin-bottom: 40px; }
       </div>
 
       <div class="form-group">
-        <label class="form-label">Reason for Visit (Optional)</label>
-        <textarea id="reason" class="form-control" rows="3" placeholder="Brief description..."></textarea>
+        <label class="form-label" for="reason">Reason for Visit (Optional)</label>
+        <textarea id="reason" class="form-control" rows="3" placeholder="Brief description..." maxlength="500"></textarea>
       </div>
+
+      @if(config('services.recaptcha.sitekey'))
+      {{-- Google reCAPTCHA v2 --}}
+      <div class="form-group">
+        <div class="g-recaptcha" data-sitekey="{{ config('services.recaptcha.sitekey') }}" id="booking-recaptcha"></div>
+        <small id="recaptcha-error" style="color:#e94560; display:none; font-size:12px; margin-top:6px;">
+          <i class="fas fa-exclamation-circle"></i> Please complete the reCAPTCHA verification.
+        </small>
+      </div>
+      @endif
 
       <button type="submit" class="btn-book" id="submit-btn" disabled>
         <i class="fas fa-calendar-check"></i> Confirm Booking
@@ -130,20 +160,26 @@ p.subtitle { color: #64748b; text-align: center; margin-bottom: 40px; }
   </div>
 </div>
 
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
 <script>
 let doctors = [];
+const RECAPTCHA_ENABLED = {{ config('services.recaptcha.sitekey') ? 'true' : 'false' }};
 
 async function loadDoctors() {
-  const r = await fetch('/api/public/doctors');
-  const d = await r.json();
-  doctors = d.data || [];
-  const select = document.getElementById('doctor_id');
-  doctors.forEach(doc => {
-    const opt = document.createElement('option');
-    opt.value = doc.id;
-    opt.textContent = `${doc.name} (${doc.specialty})`;
-    select.appendChild(opt);
-  });
+  try {
+    const r = await fetch('/api/public/doctors');
+    const d = await r.json();
+    doctors = d.data || [];
+    const select = document.getElementById('doctor_id');
+    doctors.forEach(doc => {
+      const opt = document.createElement('option');
+      opt.value = doc.id;
+      opt.textContent = `${doc.name} (${doc.specialty})`;
+      select.appendChild(opt);
+    });
+  } catch(e) {
+    showError('Failed to load doctors. Please refresh the page.');
+  }
 }
 
 async function loadSlots() {
@@ -177,7 +213,7 @@ async function loadSlots() {
       container.innerHTML = slots.map(s => `<button type="button" class="slot-btn" onclick="selectSlot(this, '${s}')">${s}</button>`).join('');
     }
   } catch (e) {
-    container.innerHTML = '<p style="color:#e94560;">Error loading slots.</p>';
+    container.innerHTML = '<p style="color:#e94560;">Error loading slots. Please try again.</p>';
   }
 }
 
@@ -191,7 +227,6 @@ function selectSlot(btn, time) {
 function applySuggestion(date, time) {
   document.getElementById('booking_date').value = date;
   loadSlots().then(() => {
-    // Find the button and select it
     const buttons = document.querySelectorAll('.slot-btn');
     for (let b of buttons) {
       if (b.textContent === time) {
@@ -207,18 +242,49 @@ document.getElementById('booking_date').addEventListener('change', loadSlots);
 
 document.getElementById('booking-form').addEventListener('submit', async function(e) {
   e.preventDefault();
+
+  // Honeypot check
+  if (document.getElementById('hp_website').value || document.getElementById('hp_confirm_email').value) {
+    return; // Silently reject bots
+  }
+
+  // Phone validation
+  const phone = document.getElementById('guest_phone').value.trim();
+  if (!/^[0-9+\-\s\(\)]{7,20}$/.test(phone)) {
+    showError('Please enter a valid phone number.');
+    return;
+  }
+
+  // reCAPTCHA validation
+  if (RECAPTCHA_ENABLED) {
+    const recaptchaResponse = grecaptcha.getResponse();
+    if (!recaptchaResponse) {
+      document.getElementById('recaptcha-error').style.display = 'block';
+      return;
+    }
+    document.getElementById('recaptcha-error').style.display = 'none';
+  }
+
   const btn = document.getElementById('submit-btn');
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
   btn.disabled = true;
   hideAlerts();
 
   const payload = {
-    guest_name: document.getElementById('guest_name').value,
-    guest_phone: document.getElementById('guest_phone').value,
-    doctor_id: document.getElementById('doctor_id').value,
+    guest_name:   document.getElementById('guest_name').value.trim(),
+    guest_phone:  phone,
+    doctor_id:    document.getElementById('doctor_id').value,
     scheduled_at: `${document.getElementById('booking_date').value} ${document.getElementById('selected_time').value}:00`,
-    reason: document.getElementById('reason').value
+    reason:       document.getElementById('reason').value.trim(),
+    // Honeypot fields (always empty for real users)
+    website:      '',
+    confirm_email: '',
   };
+
+  // Include reCAPTCHA token if enabled
+  if (RECAPTCHA_ENABLED) {
+    payload['g-recaptcha-response'] = grecaptcha.getResponse();
+  }
 
   try {
     const r = await fetch('/api/public/book-appointment', {
@@ -227,23 +293,32 @@ document.getElementById('booking-form').addEventListener('submit', async functio
       body: JSON.stringify(payload)
     });
     const d = await r.json();
-    if (d.success) {
+
+    if (r.status === 429) {
+      showError('Too many booking attempts. Please wait a moment and try again.');
+    } else if (r.status === 403) {
+      showError('Your request was blocked due to suspicious activity. Please contact us directly.');
+    } else if (d.success) {
       showSuccess('Appointment booked successfully! We will contact you shortly.');
       document.getElementById('booking-form').reset();
       document.getElementById('slots-section').style.display = 'none';
+      if (RECAPTCHA_ENABLED) grecaptcha.reset();
     } else {
-      showError(d.message || 'Error booking appointment.');
+      showError(d.message || 'Error booking appointment. Please try again.');
+      if (RECAPTCHA_ENABLED) grecaptcha.reset();
     }
   } catch (e) {
-    showError('Connection error.');
+    showError('Connection error. Please check your internet and try again.');
+    if (RECAPTCHA_ENABLED) grecaptcha.reset();
   } finally {
     btn.innerHTML = '<i class="fas fa-calendar-check"></i> Confirm Booking';
+    btn.disabled = false;
   }
 });
 
-function showError(msg) { const el = document.getElementById('error-msg'); el.textContent = msg; el.style.display = 'block'; }
-function showSuccess(msg) { const el = document.getElementById('success-msg'); el.textContent = msg; el.style.display = 'block'; }
-function hideAlerts() { document.getElementById('error-msg').style.display = 'none'; document.getElementById('success-msg').style.display = 'none'; }
+function showError(msg)   { const el = document.getElementById('error-msg'); el.textContent = msg; el.style.display = 'block'; window.scrollTo(0,0); }
+function showSuccess(msg) { const el = document.getElementById('success-msg'); el.textContent = msg; el.style.display = 'block'; window.scrollTo(0,0); }
+function hideAlerts()     { document.getElementById('error-msg').style.display = 'none'; document.getElementById('success-msg').style.display = 'none'; }
 
 loadDoctors();
 </script>

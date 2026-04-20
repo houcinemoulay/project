@@ -12,13 +12,15 @@ use App\Http\Controllers\Api\AppointmentController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\LabResultController;
+use App\Http\Controllers\Api\DoctorUnavailabilityController;
 
 // ── Public ──────────────────────────────────────────────
 Route::post('/login',      [AuthController::class, 'login']);
 Route::post('/nfc-login',  [AuthController::class, 'nfcLogin']);
 Route::get('/public/doctors', [DoctorController::class, 'index']); // For selecting doctor
 Route::get('/public/available-slots', [AppointmentController::class, 'getAvailableSlots']);
-Route::post('/public/book-appointment', [AppointmentController::class, 'publicBook']);
+Route::post('/public/book-appointment', [AppointmentController::class, 'publicBook'])
+    ->middleware(['throttle:5,1', 'suspicious.booking']);
 
 // Patient lookup by NFC UID — no token creation, safe for pharmacy/lab sessions
 Route::middleware(['auth:sanctum'])->post('/nfc-lookup', [AuthController::class, 'nfcLookup']);
@@ -71,6 +73,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         $user = $req->user()->load(['pharmacy', 'laboratory', 'doctor']);
         return response()->json(['success' => true, 'data' => $user]);
     });
+
+    // Contact messages (admin access checked in controller)
+    Route::get('/contact-messages', [App\Http\Controllers\Api\ContactMessageController::class, 'index']);
+    Route::get('/my-contact-messages', [App\Http\Controllers\Api\ContactMessageController::class, 'myMessages']);
 
     // Admin-only management
     Route::middleware(['role:admin'])->group(function () {

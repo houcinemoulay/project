@@ -8,6 +8,7 @@ use App\Models\Doctor;
 use App\Models\MedicalRecord;
 use App\Models\Appointment;
 use App\Models\Ordonnance;
+use App\Models\ContactMessage;
 
 class DashboardController extends Controller
 {
@@ -48,6 +49,9 @@ class DashboardController extends Controller
         $totalDebt = max(0, $totalRevenue - $totalPaid); // Prevent negative total debt if overpaid overall, though it's up to preference. We'll just do $totalRevenue - $totalPaid.
         $totalDebt = $totalRevenue - $totalPaid;
 
+        $unreadContactMessages = ContactMessage::where('status', 'new')->count();
+        $totalContactMessages = ContactMessage::count();
+
         $stats = [
             'patients'      => Patient::count(),
             'doctors'       => Doctor::where('is_active', true)->count(),
@@ -62,6 +66,8 @@ class DashboardController extends Controller
             'total_revenue'     => $totalRevenue,
             'total_paid'        => $totalPaid,
             'total_debt'        => $totalDebt,
+            'contact_messages_unread' => $unreadContactMessages,
+            'contact_messages_total'  => $totalContactMessages,
             'prices' => [
                 'ordonnance'  => self::OPERATION_PRICE,
                 'appointment' => self::APPOINTMENT_PRICE

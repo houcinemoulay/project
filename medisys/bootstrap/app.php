@@ -18,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Register role-based middleware alias
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+            'suspicious.booking' => \App\Http\Middleware\DetectSuspiciousBooking::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

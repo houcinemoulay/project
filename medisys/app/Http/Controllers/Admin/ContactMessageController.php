@@ -11,25 +11,40 @@ class ContactMessageController extends Controller
     public function __construct()
     {
         $this->middleware('auth');
-        $this->middleware('admin');
+        $this->middleware('role:admin');
     }
 
     public function index(Request $request)
     {
-        $messages = ContactMessage::with('user')
-            ->orderBy('created_at', 'desc')
-            ->paginate(20);
+        $status = $request->get('status', 'all');
+        $search = $request->get('search');
 
-        $unreadCount = ContactMessage::where('is_read', false)->count();
+        $query = ContactMessage::with('user')->orderBy('created_at', 'desc');
 
-        return view('admin.contact-messages.index', compact('messages', 'unreadCount'));
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('email', 'like', "%{$search}%")
+                  ->orWhere('subject', 'like', "%{$search}%");
+            });
+        }
+
+        $messages = $query->paginate(20);
+        $unreadCount = ContactMessage::where('status', 'new')->count();
+
+        return view('admin.contact-messages.index', compact('messages', 'unreadCount', 'status', 'search'));
     }
 
-    public function show(ContactMessage $contactMessage)
+    public function show($id)
     {
+        $contactMessage = ContactMessage::findOrFail($id);
+        
         // Mark as read when viewed
-        if (!$contactMessage->is_read) {
-            $contactMessage->update(['is_read' => true]);
+        if ($contactMessage->status === 'new') {
+            $contactMessage->update(['status' => 'read']);
         }
 
         $contactMessage->load('user');
@@ -37,22 +52,25 @@ class ContactMessageController extends Controller
         return view('admin.contact-messages.show', compact('contactMessage'));
     }
 
-    public function markAsRead(ContactMessage $contactMessage)
+    public function markAsRead($id)
     {
-        $contactMessage->update(['is_read' => true]);
+        $contactMessage = ContactMessage::findOrFail($id);
+        $contactMessage->update(['status' => 'read']);
 
         return back()->with('success', 'Message marked as read.');
     }
 
-    public function markAsUnread(ContactMessage $contactMessage)
+    public function markAsUnread($id)
     {
-        $contactMessage->update(['is_read' => false]);
+        $contactMessage = ContactMessage::findOrFail($id);
+        $contactMessage->update(['status' => 'new']);
 
         return back()->with('success', 'Message marked as unread.');
     }
 
-    public function destroy(ContactMessage $contactMessage)
+    public function destroy($id)
     {
+        $contactMessage = ContactMessage::findOrFail($id);
         $contactMessage->delete();
 
         return redirect()->route('admin.contact-messages.index')
