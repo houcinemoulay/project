@@ -2,41 +2,43 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ApiResponses;
+use App\Http\Controllers\Concerns\FiltersMedicalQueries;
 use App\Http\Controllers\Controller;
 use App\Jobs\GeneratePrescriptionExplanationJob;
 use App\Models\Ordonnance;
+use App\Models\Patient;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Bus;
 
 class OrdonnanceController extends Controller
 {
+    use ApiResponses;
+    use FiltersMedicalQueries;
+
+    /** Prescription type each portal role is allowed to see. */
+    private const TYPE_BY_ROLE = [
+        'isLab'      => 'laboratory',
+        'isPharmacy' => 'pharmacy',
+        'isNurse'    => 'nurse',
+    ];
+
     public function index(Request $request)
     {
         $query = Ordonnance::with(['patient', 'doctor.user', 'medicalRecord']);
+        $user = $request->user();
 
-        if ($request->has('patient_id')) {
-            $query->where('patient_id', $request->patient_id);
+        $this->filterByPatient($query, $request);
+        $this->scopeToOwnDoctor($query, $user);
+
+        foreach (self::TYPE_BY_ROLE as $check => $type) {
+            if ($user && $user->{$check}()) {
+                $query->where('type', $type);
+            }
         }
 
-        if ($request->user() && $request->user()->isDoctor()) {
-            $query->where('doctor_id', $request->user()->doctor->id);
-        }
-
-        if ($request->user() && $request->user()->isLab()) {
-            $query->where('type', 'laboratory');
-        }
-
-        if ($request->user() && $request->user()->isPharmacy()) {
-            $query->where('type', 'pharmacy');
-        }
-
-        if ($request->user() && $request->user()->isNurse()) {
-            $query->where('type', 'nurse');
-        }
-
-        return response()->json(['success' => true, 'data' => $query->latest()->get()]);
+        return $this->ok($query->latest()->get());
     }
 
     public function store(Request $request)
@@ -55,10 +57,8 @@ class OrdonnanceController extends Controller
             'type'                    => 'nullable|in:pharmacy,laboratory,nurse',
         ]);
 
-        $doctorId = $request->user()->doctor->id;
-
         $ordonnance = Ordonnance::create(array_merge($validated, [
-            'doctor_id' => $doctorId,
+            'doctor_id' => $this->currentDoctorId($request),
             'type'      => $validated['type'] ?? 'pharmacy',
             'status'    => 'active',
         ]));
@@ -66,19 +66,15 @@ class OrdonnanceController extends Controller
         // Dispatch AI explanation job asynchronously
         GeneratePrescriptionExplanationJob::dispatch($ordonnance);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Prescription created. AI explanation is being generated.',
-            'data'    => $ordonnance->load(['patient', 'doctor.user']),
-        ], 201);
+        return $this->created(
+            $ordonnance->load(['patient', 'doctor.user']),
+            'Prescription created. AI explanation is being generated.'
+        );
     }
 
     public function show(Ordonnance $ordonnance)
     {
-        return response()->json([
-            'success' => true,
-            'data'    => $ordonnance->load(['patient', 'doctor.user', 'medicalRecord']),
-        ]);
+        return $this->ok($ordonnance->load(['patient', 'doctor.user', 'medicalRecord']));
     }
 
     public function update(Request $request, Ordonnance $ordonnance)
@@ -92,13 +88,14 @@ class OrdonnanceController extends Controller
 
         $ordonnance->update($validated);
 
-        return response()->json(['success' => true, 'data' => $ordonnance->fresh()]);
+        return $this->ok($ordonnance->fresh());
     }
 
     public function destroy(Ordonnance $ordonnance)
     {
         $ordonnance->delete();
-        return response()->json(['success' => true, 'message' => 'Prescription deleted.']);
+
+        return $this->message('Prescription deleted.');
     }
 
     /**
@@ -107,7 +104,7 @@ class OrdonnanceController extends Controller
     public function dispense(Request $request, Ordonnance $ordonnance)
     {
         if ($ordonnance->status === 'dispensed') {
-            return response()->json(['success' => false, 'message' => 'Already marked as dispensed.'], 400);
+            return $this->failure('Already marked as dispensed.');
         }
 
         $ordonnance->update([
@@ -117,11 +114,7 @@ class OrdonnanceController extends Controller
             'dispensed_note' => $request->input('note'),
         ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Marked as delivered.',
-            'data'    => $ordonnance->fresh(['patient', 'doctor.user']),
-        ]);
+        return $this->ok($ordonnance->fresh(['patient', 'doctor.user']), 'Marked as delivered.');
     }
 
     public function toggleTaken(Ordonnance $ordonnance)
@@ -129,17 +122,14 @@ class OrdonnanceController extends Controller
         $ordonnance->is_taken = !$ordonnance->is_taken;
         $ordonnance->save();
 
-        return response()->json(['success' => true, 'is_taken' => $ordonnance->is_taken]);
+        return $this->ok(extra: ['is_taken' => $ordonnance->is_taken]);
     }
+
     public function forPatient(Request $request)
     {
         $patient = $request->user(); // Patient model (NFC auth)
-        $ordonnances = Ordonnance::with(['doctor.user', 'medicalRecord'])
-            ->where('patient_id', $patient->id)
-            ->latest()
-            ->get();
 
-        return response()->json(['success' => true, 'data' => $ordonnances]);
+        return $this->ok($this->prescriptionsFor($patient->id)->get());
     }
 
     /**
@@ -171,22 +161,23 @@ class OrdonnanceController extends Controller
      */
     public function byNfcUid(Request $request)
     {
-        $patient = \App\Models\Patient::where('nfc_uid', $request->nfc_uid)->first();
+        $patient = Patient::where('nfc_uid', $request->nfc_uid)->first();
+
         if (!$patient) {
-            return response()->json(['success' => false, 'message' => 'Patient not found'], 404);
+            return $this->notFound('Patient not found');
         }
 
-        $ordonnances = Ordonnance::with(['doctor.user', 'medicalRecord'])
-            ->where('patient_id', $patient->id)
-            ->where('status', 'active')
-            ->latest()
-            ->get();
-
-        return response()->json([
-            'success'     => true,
+        return $this->ok(extra: [
             'patient'     => $patient,
-            'ordonnances' => $ordonnances,
+            'ordonnances' => $this->prescriptionsFor($patient->id)->where('status', 'active')->get(),
         ]);
+    }
+
+    private function prescriptionsFor(int $patientId)
+    {
+        return Ordonnance::with(['doctor.user', 'medicalRecord'])
+            ->where('patient_id', $patientId)
+            ->latest();
     }
 }
 

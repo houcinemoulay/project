@@ -2,14 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ApiResponses;
 use App\Http\Controllers\Controller;
 use App\Models\LabResult;
-use App\Models\Patient;
+use App\Support\PublicFiles;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class LabResultController extends Controller
 {
+    use ApiResponses;
+
     /** List lab results for a patient */
     public function index(Request $request)
     {
@@ -19,31 +23,20 @@ class LabResultController extends Controller
             $query->where('patient_id', $request->patient_id);
         }
 
-        // Lab users only see their own uploads
-        $user = $request->user();
-        if ($user->role === 'lab' && $user->laboratory) {
-            $query->where('laboratory_id', $user->laboratory->id);
-        }
+        $this->scopeToOwnLaboratory($query, $request->user());
 
-        return response()->json(['success' => true, 'data' => $query->latest()->get()]);
+        return $this->ok($query->latest()->get());
     }
 
     /** All lab results uploaded by this lab (for the History tab) */
     public function history(Request $request)
     {
-        $user = $request->user();
-
         $query = LabResult::with(['patient']);
 
-        // Lab users see only their own uploads
-        if ($user->role === 'lab' && $user->laboratory) {
-            $query->where('laboratory_id', $user->laboratory->id);
-        }
-
         // Admin/doctor see all
-        $results = $query->latest()->get();
+        $this->scopeToOwnLaboratory($query, $request->user());
 
-        return response()->json(['success' => true, 'data' => $results]);
+        return $this->ok($query->latest()->get());
     }
 
     /** Upload a lab result (image or PDF) */
@@ -56,41 +49,42 @@ class LabResultController extends Controller
             'note'       => 'nullable|string|max:1000',
         ]);
 
-        $file     = $request->file('file');
-        $ext      = strtolower($file->getClientOriginalExtension());
-        $fileType = in_array($ext, ['jpg','jpeg','png','gif']) ? 'image' : 'pdf';
-
-        $path = $file->store('lab-results', 'public');
-
-        $user = $request->user();
-        $labId = null;
-        if ($user->role === 'lab' && $user->laboratory) {
-            $labId = $user->laboratory->id;
-        }
+        $file = $request->file('file');
+        $path = PublicFiles::store($file, 'lab-results');
 
         $result = LabResult::create([
             'patient_id'    => $request->patient_id,
-            'laboratory_id' => $labId,
+            'laboratory_id' => $this->ownLaboratoryId($request->user()),
             'file_path'     => $path,
-            'file_type'     => $fileType,
+            'file_type'     => PublicFiles::kind($file),
             'title'         => $request->title,
             'note'          => $request->note,
         ]);
 
-        return response()->json([
-            'success' => true,
-            'data'    => $result,
-            'url'     => asset('storage/' . $path),
-        ], 201);
+        return $this->created($result, extra: ['url' => PublicFiles::url($path)]);
     }
 
     /** Delete a lab result */
     public function destroy(LabResult $labResult)
     {
-        if (Storage::disk('public')->exists($labResult->file_path)) {
-            Storage::disk('public')->delete($labResult->file_path);
-        }
+        PublicFiles::delete($labResult->file_path);
         $labResult->delete();
-        return response()->json(['success' => true]);
+
+        return $this->ok();
+    }
+
+    /** Lab users only see their own uploads; admins and doctors see everything. */
+    private function scopeToOwnLaboratory(Builder $query, ?Authenticatable $user): void
+    {
+        $laboratoryId = $this->ownLaboratoryId($user);
+
+        if ($laboratoryId !== null) {
+            $query->where('laboratory_id', $laboratoryId);
+        }
+    }
+
+    private function ownLaboratoryId(?Authenticatable $user): ?int
+    {
+        return $user && $user->role === 'lab' && $user->laboratory ? $user->laboratory->id : null;
     }
 }

@@ -2,23 +2,28 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ApiResponses;
+use App\Http\Controllers\Concerns\FiltersMedicalQueries;
 use App\Http\Controllers\Controller;
 use App\Models\DoctorUnavailability;
 use Illuminate\Http\Request;
 
 class DoctorUnavailabilityController extends Controller
 {
+    use ApiResponses;
+    use FiltersMedicalQueries;
+
     public function index(Request $request)
     {
         $query = DoctorUnavailability::query();
 
         if ($request->user()->isDoctor()) {
-            $query->where('doctor_id', $request->user()->doctor->id);
+            $this->scopeToOwnDoctor($query, $request->user());
         } elseif ($request->has('doctor_id')) {
             $query->where('doctor_id', $request->doctor_id);
         }
 
-        return response()->json(['success' => true, 'data' => $query->latest()->get()]);
+        return $this->ok($query->latest()->get());
     }
 
     public function store(Request $request)
@@ -29,22 +34,17 @@ class DoctorUnavailabilityController extends Controller
             'reason'     => 'nullable|string|max:255',
         ]);
 
-        $doctorId = $request->user()->doctor->id;
-
         $unavailability = DoctorUnavailability::create(array_merge($validated, [
-            'doctor_id' => $doctorId,
+            'doctor_id' => $this->currentDoctorId($request),
         ]));
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Unavailability added.',
-            'data'    => $unavailability,
-        ], 201);
+        return $this->created($unavailability, 'Unavailability added.');
     }
 
     public function destroy(DoctorUnavailability $doctorUnavailability)
     {
         $doctorUnavailability->delete();
-        return response()->json(['success' => true, 'message' => 'Unavailability removed.']);
+
+        return $this->message('Unavailability removed.');
     }
 }

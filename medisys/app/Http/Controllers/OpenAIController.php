@@ -2,28 +2,18 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
+use App\Services\GeminiClient;
 
 class OpenAIController extends Controller
 {
+    public function __construct(private GeminiClient $gemini)
+    {
+    }
+
     public function testGoogleAI()
     {
-        $apiKey = config('services.gemini.key', 'AIzaSyCTJdL_lhpwc3F0D2EBvbm0GDVdpBJnKxw');
+        $result = $this->gemini->generateText('Hello, are you working?');
 
-        $response = Http::post(
-            "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=".$apiKey,
-            [
-                "contents" => [
-                    [
-                        "parts" => [
-                            ["text" => "Hello, are you working?"]
-                        ]
-                    ]
-                ]
-            ]
-        );
-
-        return $response->json();
+        return response()->json($result['data'] ?? ['error' => $result['reason']]);
     }
 }

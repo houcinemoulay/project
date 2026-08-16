@@ -2,12 +2,19 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
+use App\Http\Controllers\Concerns\ApiResponses;
+use App\Http\Controllers\Concerns\ManagesNurseAccounts;
+use App\Http\Controllers\Concerns\SearchesColumns;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 
 class NurseController extends Controller
 {
+    use ApiResponses;
+    use ManagesNurseAccounts;
+    use SearchesColumns;
+
     public function __construct()
     {
         $this->middleware(['auth:sanctum', 'role:admin']);
@@ -18,19 +25,10 @@ class NurseController extends Controller
      */
     public function index(Request $request)
     {
-        $query = User::where('role', 'nurse')
+        $query = $this->nurseQuery()
             ->select(['id', 'name', 'email', 'username', 'phone', 'department', 'license_number', 'address', 'code', 'created_at']);
 
-        // Apply search filter
-        if ($request->search) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('department', 'like', "%{$search}%")
-                  ->orWhere('username', 'like', "%{$search}%");
-            });
-        }
+        $this->applySearch($query, $request->search, ['name', 'email', 'department', 'username']);
 
         // Apply department filter
         if ($request->department) {
@@ -41,9 +39,7 @@ class NurseController extends Controller
         $perPage = $request->per_page ?? 10;
         $nurses = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => $nurses->items(),
+        return $this->ok($nurses->items(), extra: [
             'pagination' => [
                 'current_page' => $nurses->currentPage(),
                 'last_page' => $nurses->lastPage(),
@@ -51,7 +47,7 @@ class NurseController extends Controller
                 'total' => $nurses->total(),
                 'from' => $nurses->firstItem(),
                 'to' => $nurses->lastItem()
-            ]
+            ],
         ]);
     }
 
@@ -60,24 +56,23 @@ class NurseController extends Controller
      */
     public function statistics()
     {
-        $totalNurses = User::where('role', 'nurse')->count();
-        $activeNurses = User::where('role', 'nurse')->count(); // All nurses are considered active
-        $newThisMonth = User::where('role', 'nurse')
+        $totalNurses = $this->nurseQuery()->count();
+        $activeNurses = $this->nurseQuery()->count(); // All nurses are considered active
+        $newThisMonth = $this->nurseQuery()
             ->whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year)
             ->count();
-        
-        $departments = User::where('role', 'nurse')
+
+        $departments = $this->nurseQuery()
             ->whereNotNull('department')
             ->distinct('department')
             ->count();
 
-        return response()->json([
-            'success' => true,
+        return $this->ok(extra: [
             'total' => $totalNurses,
             'active' => $activeNurses,
             'new_this_month' => $newThisMonth,
-            'departments' => $departments
+            'departments' => $departments,
         ]);
     }
 
@@ -86,21 +81,13 @@ class NurseController extends Controller
      */
     public function show($id)
     {
-        $nurse = User::where('role', 'nurse')
-            ->where('id', $id)
-            ->first();
+        $nurse = $this->findNurse($id);
 
         if (!$nurse) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Nurse not found'
-            ], 404);
+            return $this->notFound('Nurse not found');
         }
 
-        return response()->json([
-            'success' => true,
-            'data' => $nurse
-        ]);
+        return $this->ok($nurse);
     }
 
     /**
@@ -108,39 +95,14 @@ class NurseController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'username' => 'required|string|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string|max:500',
-            'department' => 'nullable|string|max:255',
-            'license_number' => 'nullable|string|max:255',
-        ]);
+        $validated = $request->validate($this->nurseRules());
 
-        $nurse = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'username' => $validated['username'],
-            'password' => Hash::make($validated['password']),
-            'role' => 'nurse',
-            'phone' => $validated['phone'] ?? null,
-            'address' => $validated['address'] ?? null,
-            'code' => 'NURSE' . strtoupper(uniqid()),
-        ]);
+        $nurse = User::create($this->nurseUserAttributes($validated, creating: true));
 
         // Store additional nurse metadata
-        $nurse->update([
-            'department' => $validated['department'] ?? null,
-            'license_number' => $validated['license_number'] ?? null,
-        ]);
+        $nurse->update($this->nurseProfileAttributes($validated));
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Nurse created successfully',
-            'data' => $nurse
-        ]);
+        return $this->ok($nurse, 'Nurse created successfully');
     }
 
     /**
@@ -148,58 +110,20 @@ class NurseController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $nurse = User::where('role', 'nurse')->where('id', $id)->first();
+        $nurse = $this->findNurse($id);
 
         if (!$nurse) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Nurse not found'
-            ], 404);
+            return $this->notFound('Nurse not found');
         }
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => [
-                'required',
-                'string',
-                'email',
-                'max:255',
-                Rule::unique('users')->ignore($nurse->id),
-            ],
-            'username' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('users')->ignore($nurse->id),
-            ],
-            'password' => 'nullable|string|min:8|confirmed',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string|max:500',
-            'department' => 'nullable|string|max:255',
-            'license_number' => 'nullable|string|max:255',
-        ]);
+        $validated = $request->validate($this->nurseRules($nurse));
 
-        $updateData = [
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'username' => $validated['username'],
-            'phone' => $validated['phone'] ?? null,
-            'address' => $validated['address'] ?? null,
-            'department' => $validated['department'] ?? null,
-            'license_number' => $validated['license_number'] ?? null,
-        ];
+        $nurse->update(array_merge(
+            $this->nurseUserAttributes($validated, creating: false),
+            $this->nurseProfileAttributes($validated)
+        ));
 
-        if ($validated['password']) {
-            $updateData['password'] = Hash::make($validated['password']);
-        }
-
-        $nurse->update($updateData);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Nurse updated successfully',
-            'data' => $nurse
-        ]);
+        return $this->ok($nurse, 'Nurse updated successfully');
     }
 
     /**
@@ -207,20 +131,19 @@ class NurseController extends Controller
      */
     public function destroy($id)
     {
-        $nurse = User::where('role', 'nurse')->where('id', $id)->first();
+        $nurse = $this->findNurse($id);
 
         if (!$nurse) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Nurse not found'
-            ], 404);
+            return $this->notFound('Nurse not found');
         }
 
         $nurse->delete();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Nurse deleted successfully'
-        ]);
+        return $this->message('Nurse deleted successfully');
+    }
+
+    private function findNurse($id): ?User
+    {
+        return $this->nurseQuery()->where('id', $id)->first();
     }
 }

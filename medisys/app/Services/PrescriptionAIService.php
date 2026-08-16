@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-
 class PrescriptionAIService
 {
+    public function __construct(private ?GeminiClient $gemini = null)
+    {
+        $this->gemini = $gemini ?? new GeminiClient();
+    }
+
     /**
      * Generate explanation for prescription using AI
      *
@@ -17,83 +19,21 @@ class PrescriptionAIService
      */
     public function generateExplanation(string $medications, string $instructions, string $language = 'ar'): array
     {
-        try {
-            $apiKey = env('GEMINI_API_KEY', env('GOOGLE_API_KEY'));
-            
-            if (!$apiKey) {
-                Log::error('PrescriptionAIService: API key not configured');
-                return [
-                    'success' => false,
-                    'error' => 'AI service not configured'
-                ];
-            }
+        $prescriptionText = "Medications: {$medications}\nInstructions: {$instructions}";
 
-            // Build the prescription content
-            $prescriptionText = "Medications: {$medications}\nInstructions: {$instructions}";
-            
-            // Create the prompt based on language
-            $prompt = $this->buildPrompt($prescriptionText, $language);
+        $result = $this->gemini->generateText($this->buildPrompt($prescriptionText, $language));
 
-            // Call Gemini API
-            $response = Http::timeout(30)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" . $apiKey,
-                [
-                    "contents" => [
-                        [
-                            "parts" => [
-                                ["text" => $prompt]
-                            ]
-                        ]
-                    ]
-                ]
-            );
-
-            if ($response->failed()) {
-                Log::error('PrescriptionAIService: API call failed', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
-                return [
-                    'success' => false,
-                    'error' => 'AI service temporarily unavailable'
-                ];
-            }
-
-            $data = $response->json();
-
-            if (isset($data['error'])) {
-                Log::error('PrescriptionAIService: API returned error', $data['error']);
-                return [
-                    'success' => false,
-                    'error' => 'AI service error'
-                ];
-            }
-
-            if (!isset($data['candidates'][0]['content']['parts'][0]['text'])) {
-                Log::error('PrescriptionAIService: Invalid API response format', $data);
-                return [
-                    'success' => false,
-                    'error' => 'Invalid AI response'
-                ];
-            }
-
-            $explanation = $data['candidates'][0]['content']['parts'][0]['text'];
-
+        if ($result['success']) {
             return [
                 'success' => true,
-                'explanation' => $explanation
-            ];
-
-        } catch (\Exception $e) {
-            Log::error('PrescriptionAIService: Exception occurred', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return [
-                'success' => false,
-                'error' => 'AI service error'
+                'explanation' => $result['text']
             ];
         }
+
+        return [
+            'success' => false,
+            'error' => GeminiFailure::describe('PrescriptionAIService', $result)
+        ];
     }
 
     /**

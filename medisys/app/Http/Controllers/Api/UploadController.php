@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ApiResponses;
 use App\Http\Controllers\Controller;
+use App\Models\Doctor;
+use App\Models\Patient;
+use App\Support\PublicFiles;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class UploadController extends Controller
 {
+    use ApiResponses;
+
     public function uploadPhoto(Request $request)
     {
         $request->validate([
@@ -16,26 +21,19 @@ class UploadController extends Controller
             'entity_id' => 'required|integer',
         ]);
 
-        $path = $request->file('photo')->store('photos/' . $request->type, 'public');
+        $modelClass = $request->type === 'doctor' ? Doctor::class : Patient::class;
+        $model = $modelClass::findOrFail($request->entity_id);
 
-        if ($request->type === 'doctor') {
-            $model = \App\Models\Doctor::findOrFail($request->entity_id);
-        } else {
-            $model = \App\Models\Patient::findOrFail($request->entity_id);
-        }
-
-        // Delete old photo
-        if ($model->photo && Storage::disk('public')->exists($model->photo)) {
-            Storage::disk('public')->delete($model->photo);
-        }
-
-        $model->photo = $path;
+        $model->photo = PublicFiles::replace(
+            $model->photo,
+            $request->file('photo'),
+            'photos/' . $request->type
+        );
         $model->save();
 
-        return response()->json([
-            'success' => true,
-            'url'     => asset('storage/' . $path),
-            'path'    => $path,
+        return $this->ok(extra: [
+            'url'  => PublicFiles::url($model->photo),
+            'path' => $model->photo,
         ]);
     }
 
@@ -47,13 +45,12 @@ class UploadController extends Controller
             'note'       => 'nullable|string|max:500',
         ]);
 
-        $path = $request->file('file')->store('lab-results', 'public');
+        $path = PublicFiles::store($request->file('file'), 'lab-results');
 
-        return response()->json([
-            'success' => true,
-            'url'     => asset('storage/' . $path),
-            'path'    => $path,
-            'note'    => $request->note,
+        return $this->ok(extra: [
+            'url'  => PublicFiles::url($path),
+            'path' => $path,
+            'note' => $request->note,
         ]);
     }
 }

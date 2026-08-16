@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\ManagesNurseAccounts;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rule;
 
 class NurseController extends Controller
 {
+    use ManagesNurseAccounts;
+
     public function __construct()
     {
         // Middleware is handled in routes/web.php
@@ -28,7 +29,7 @@ class NurseController extends Controller
      */
     public function index()
     {
-        $nurses = User::where('role', 'nurse')
+        $nurses = $this->nurseQuery()
             ->with('nurse')
             ->orderBy('created_at', 'desc')
             ->paginate(10);
@@ -49,33 +50,12 @@ class NurseController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'username' => 'required|string|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string|max:500',
-            'department' => 'nullable|string|max:255',
-            'license_number' => 'nullable|string|max:255',
-        ]);
+        $validated = $request->validate($this->nurseRules());
 
-        $nurse = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'username' => $validated['username'],
-            'password' => Hash::make($validated['password']),
-            'role' => 'nurse',
-            'phone' => $validated['phone'] ?? null,
-            'address' => $validated['address'] ?? null,
-            'code' => 'NURSE' . strtoupper(uniqid()),
-        ]);
+        $nurse = User::create($this->nurseUserAttributes($validated, creating: true));
 
         // Create nurse profile linked to user
-        $nurse->nurse()->create([
-            'department' => $validated['department'] ?? null,
-            'license_number' => $validated['license_number'] ?? null,
-        ]);
+        $nurse->nurse()->create($this->nurseProfileAttributes($validated));
 
         return redirect()
             ->route('admin.nurses.index')
@@ -117,49 +97,14 @@ class NurseController extends Controller
             abort(404);
         }
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => [
-                'required',
-                'string',
-                'email',
-                'max:255',
-                Rule::unique('users')->ignore($nurse->id),
-            ],
-            'username' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('users')->ignore($nurse->id),
-            ],
-            'password' => 'nullable|string|min:8|confirmed',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string|max:500',
-            'department' => 'nullable|string|max:255',
-            'license_number' => 'nullable|string|max:255',
-        ]);
+        $validated = $request->validate($this->nurseRules($nurse));
 
-        $userData = [
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'username' => $validated['username'],
-            'phone' => $validated['phone'] ?? null,
-            'address' => $validated['address'] ?? null,
-        ];
-
-        if ($validated['password']) {
-            $userData['password'] = Hash::make($validated['password']);
-        }
-
-        $nurse->update($userData);
+        $nurse->update($this->nurseUserAttributes($validated, creating: false));
 
         // Update nurse profile
         $nurse->nurse()->updateOrCreate(
             ['user_id' => $nurse->id],
-            [
-                'department' => $validated['department'] ?? null,
-                'license_number' => $validated['license_number'] ?? null,
-            ]
+            $this->nurseProfileAttributes($validated)
         );
 
         return redirect()

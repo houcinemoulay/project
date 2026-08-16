@@ -2,29 +2,25 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ApiResponses;
+use App\Http\Controllers\Concerns\FiltersMedicalQueries;
 use App\Http\Controllers\Controller;
 use App\Models\MedicalRecord;
-use App\Models\Patient;
 use Illuminate\Http\Request;
 
 class MedicalRecordController extends Controller
 {
+    use ApiResponses;
+    use FiltersMedicalQueries;
+
     public function index(Request $request)
     {
         $query = MedicalRecord::with(['patient', 'doctor.user']);
 
-        if ($request->has('patient_id')) {
-            $query->where('patient_id', $request->patient_id);
-        }
+        $this->filterByPatient($query, $request);
+        $this->scopeToOwnDoctor($query, $request->user());
 
-        if ($request->user()->isDoctor()) {
-            // Doctor sees only their own records
-            $query->where('doctor_id', $request->user()->doctor->id);
-        }
-
-        $records = $query->orderBy('visit_date', 'desc')->paginate(15);
-
-        return response()->json(['success' => true, 'data' => $records]);
+        return $this->ok($query->orderBy('visit_date', 'desc')->paginate(15));
     }
 
     public function store(Request $request)
@@ -42,23 +38,16 @@ class MedicalRecordController extends Controller
             'visit_date'    => 'required|date',
         ]);
 
-        $doctorId = $request->user()->doctor->id;
+        $record = MedicalRecord::create(array_merge($validated, [
+            'doctor_id' => $this->currentDoctorId($request),
+        ]));
 
-        $record = MedicalRecord::create(array_merge($validated, ['doctor_id' => $doctorId]));
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Medical record created.',
-            'data'    => $record->load(['patient', 'doctor.user']),
-        ], 201);
+        return $this->created($record->load(['patient', 'doctor.user']), 'Medical record created.');
     }
 
     public function show(MedicalRecord $medicalRecord)
     {
-        return response()->json([
-            'success' => true,
-            'data'    => $medicalRecord->load(['patient', 'doctor.user', 'ordonnances']),
-        ]);
+        return $this->ok($medicalRecord->load(['patient', 'doctor.user', 'ordonnances']));
     }
 
     public function update(Request $request, MedicalRecord $medicalRecord)
@@ -77,16 +66,13 @@ class MedicalRecordController extends Controller
 
         $medicalRecord->update($validated);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Medical record updated.',
-            'data'    => $medicalRecord->fresh(['patient', 'doctor.user']),
-        ]);
+        return $this->ok($medicalRecord->fresh(['patient', 'doctor.user']), 'Medical record updated.');
     }
 
     public function destroy(MedicalRecord $medicalRecord)
     {
         $medicalRecord->delete();
-        return response()->json(['success' => true, 'message' => 'Medical record deleted.']);
+
+        return $this->message('Medical record deleted.');
     }
 }

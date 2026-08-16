@@ -35,13 +35,16 @@ return [
         'sitekey' => env('RECAPTCHA_SITE_KEY'),
         'secret' => env('RECAPTCHA_SECRET_KEY'),
     ],
-    'recaptcha' => [
-        'sitekey' => env('RECAPTCHA_SITE_KEY'),
-        'secret' => env('RECAPTCHA_SECRET_KEY'),
-    ],
 
     'openai' => [
         'key' => env('OPENAI_API_KEY'),
+    ],
+
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY', env('GOOGLE_API_KEY')),
+        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+        'version' => env('GEMINI_API_VERSION', 'v1beta'),
+        'timeout' => (int) env('GEMINI_TIMEOUT', 30),
     ],
 
 ];

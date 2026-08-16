@@ -2,15 +2,22 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ApiResponses;
 use App\Http\Controllers\Controller;
 use App\Models\Doctor;
-use App\Models\User;
+use App\Services\StaffAccountService;
+use App\Support\PublicFiles;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
 class DoctorController extends Controller
 {
+    use ApiResponses;
+
+    public function __construct(private StaffAccountService $accounts)
+    {
+    }
+
     public function index()
     {
         $doctors = Doctor::with('user')
@@ -18,7 +25,7 @@ class DoctorController extends Controller
             ->get()
             ->map(fn($d) => $this->formatDoctor($d));
 
-        return response()->json(['success' => true, 'data' => $doctors]);
+        return $this->ok($doctors);
     }
 
     public function store(Request $request)
@@ -39,11 +46,10 @@ class DoctorController extends Controller
             'treatment_time' => 'nullable|integer|min:1',
         ]);
 
-        $user = User::create([
+        $user = $this->accounts->createUser('doctor', [
             'name'     => $validated['name'],
             'email'    => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'role'     => 'doctor',
+            'password' => $validated['password'],
         ]);
 
         $doctor = Doctor::create([
@@ -52,26 +58,19 @@ class DoctorController extends Controller
             'phone'          => $validated['phone'] ?? null,
             'license_number' => $validated['license_number'] ?? null,
             'bio'            => $validated['bio'] ?? null,
-            'photo'          => $request->hasFile('photo') ? $request->file('photo')->store('doctors', 'public') : null,
+            'photo'          => $request->hasFile('photo') ? PublicFiles::store($request->file('photo'), 'doctors') : null,
             'working_days'   => $validated['working_days'] ?? null,
             'working_hours_start' => $validated['working_hours_start'] ?? null,
             'working_hours_end'   => $validated['working_hours_end'] ?? null,
             'treatment_time' => $validated['treatment_time'] ?? 30,
         ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Doctor created successfully.',
-            'data'    => $this->formatDoctor($doctor->load('user')),
-        ], 201);
+        return $this->created($this->formatDoctor($doctor->load('user')), 'Doctor created successfully.');
     }
 
     public function show(Doctor $doctor)
     {
-        return response()->json([
-            'success' => true,
-            'data'    => $this->formatDoctor($doctor->load('user')),
-        ]);
+        return $this->ok($this->formatDoctor($doctor->load('user')));
     }
 
     public function update(Request $request, Doctor $doctor)
@@ -94,15 +93,7 @@ class DoctorController extends Controller
             'treatment_time' => 'nullable|integer|min:1',
         ]);
 
-        // Update user details
-        $userUpdate = [];
-        if (isset($validated['name'])) $userUpdate['name'] = $validated['name'];
-        if (isset($validated['email'])) $userUpdate['email'] = $validated['email'];
-        if (!empty($validated['password'])) $userUpdate['password'] = Hash::make($validated['password']);
-
-        if (!empty($userUpdate)) {
-            $doctor->user->update($userUpdate);
-        }
+        $this->accounts->syncUser($doctor->user, $validated);
 
         // Update doctor profile
         $doctorUpdate = [];
@@ -113,24 +104,21 @@ class DoctorController extends Controller
         }
 
         if ($request->hasFile('photo')) {
-            $doctorUpdate['photo'] = $request->file('photo')->store('doctors', 'public');
+            $doctorUpdate['photo'] = PublicFiles::store($request->file('photo'), 'doctors');
         }
 
         if (!empty($doctorUpdate)) {
             $doctor->update($doctorUpdate);
         }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Doctor updated successfully.',
-            'data'    => $this->formatDoctor($doctor->fresh('user')),
-        ]);
+        return $this->ok($this->formatDoctor($doctor->fresh('user')), 'Doctor updated successfully.');
     }
 
     public function destroy(Doctor $doctor)
     {
         $doctor->user->delete(); // cascade deletes doctor
-        return response()->json(['success' => true, 'message' => 'Doctor deleted successfully.']);
+
+        return $this->message('Doctor deleted successfully.');
     }
 
     private function formatDoctor(Doctor $doctor): array
@@ -144,7 +132,7 @@ class DoctorController extends Controller
             'license_number' => $doctor->license_number,
             'bio'            => $doctor->bio,
             'is_active'      => $doctor->is_active,
-            'photo'          => $doctor->photo ? asset('storage/' . $doctor->photo) : null,
+            'photo'          => PublicFiles::url($doctor->photo),
             'working_days'   => $doctor->working_days,
             'working_hours_start' => $doctor->working_hours_start ? substr($doctor->working_hours_start, 0, 5) : null,
             'working_hours_end'   => $doctor->working_hours_end ? substr($doctor->working_hours_end, 0, 5) : null,
