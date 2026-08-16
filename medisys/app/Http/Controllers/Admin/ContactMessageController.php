@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\SearchesColumns;
 use App\Http\Controllers\Controller;
 use App\Models\ContactMessage;
 use Illuminate\Http\Request;
 
 class ContactMessageController extends Controller
 {
+    use SearchesColumns;
+
     public function index(Request $request)
     {
         $status = $request->get('status', 'all');
@@ -19,12 +22,7 @@ class ContactMessageController extends Controller
             $query->where('status', $status);
         }
 
-        if ($search) {
-            $query->where(function($q) use ($search) {
-                $q->where('email', 'like', "%{$search}%")
-                  ->orWhere('subject', 'like', "%{$search}%");
-            });
-        }
+        $this->applySearch($query, $search, ['email', 'subject']);
 
         $messages = $query->paginate(20);
         $unreadCount = ContactMessage::where('status', 'new')->count();

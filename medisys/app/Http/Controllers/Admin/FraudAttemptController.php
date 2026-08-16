@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\SearchesColumns;
 use App\Http\Controllers\Controller;
 use App\Models\FraudAttempt;
 use Illuminate\Http\Request;
 
 class FraudAttemptController extends Controller
 {
+    use SearchesColumns;
+
     public function index(Request $request)
     {
         $reason = $request->get('reason', 'all');
@@ -19,13 +22,7 @@ class FraudAttemptController extends Controller
             $query->where('reason', $reason);
         }
 
-        if ($search) {
-            $query->where(function($q) use ($search) {
-                $q->where('ip_address', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%");
-            });
-        }
+        $this->applySearch($query, $search, ['ip_address', 'email', 'phone']);
 
         $fraudAttempts = $query->paginate(50);
 

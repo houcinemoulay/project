@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesStaff;
 use App\Models\NurseNote;
 use App\Models\Patient;
 use Illuminate\Http\Request;
@@ -9,15 +10,14 @@ use Illuminate\Support\Facades\Auth;
 
 class NurseNoteController extends Controller
 {
+    use AuthorizesStaff;
+
     /**
      * Store a newly created nurse note.
      */
     public function store(Request $request, Patient $patient)
     {
-        // Check if user is a nurse, admin, or doctor
-        if (!in_array(Auth::user()->role, ['nurse', 'admin', 'doctor'])) {
-            abort(403, 'Unauthorized access');
-        }
+        $this->authorizeClinicalStaff();
 
         $validated = $request->validate([
             'note' => 'required|string|max:1000',
@@ -40,10 +40,7 @@ class NurseNoteController extends Controller
      */
     public function index(Patient $patient)
     {
-        // Check if user has permission to view patient notes
-        if (!in_array(Auth::user()->role, ['nurse', 'admin', 'doctor'])) {
-            abort(403, 'Unauthorized access');
-        }
+        $this->authorizeClinicalStaff();
 
         $notes = NurseNote::where('patient_id', $patient->id)
             ->with('nurse')

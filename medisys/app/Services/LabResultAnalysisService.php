@@ -6,10 +6,14 @@ use App\Models\LabResult;
 use App\Models\MedicalRecord;
 use App\Models\Patient;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Http;
 
 class LabResultAnalysisService
 {
+    public function __construct(private ?GeminiClient $gemini = null)
+    {
+        $this->gemini = $gemini ?? new GeminiClient();
+    }
+
     /**
      * Analyze lab results and provide AI-powered recommendations
      */
@@ -159,15 +163,6 @@ class LabResultAnalysisService
      */
     private function generateAIAnalysis(Patient $patient, array $labResults, array $medicalRecords): array
     {
-        $apiKey = env('GEMINI_API_KEY', env('GOOGLE_API_KEY'));
-        
-        if (!$apiKey) {
-            return [
-                'success' => false,
-                'error' => 'AI service not configured'
-            ];
-        }
-
         // Prepare data for AI
         $patientInfo = [
             'age' => $patient->age ?? 'Unknown',
@@ -177,52 +172,18 @@ class LabResultAnalysisService
 
         $prompt = $this->buildAnalysisPrompt($patientInfo, $labResults, $medicalRecords);
 
-        $response = Http::withHeaders([
-            'Content-Type' => 'application/json',
-        ])->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={$apiKey}", [
-            'contents' => [
-                [
-                    'parts' => [
-                        ['text' => $prompt]
-                    ]
-                ]
-            ]
-        ]);
+        $result = $this->gemini->generateText($prompt, ['model' => 'gemini-1.5-flash-latest']);
 
-        if ($response->failed()) {
-            Log::error('LabResultAnalysisService: API call failed', [
-                'status' => $response->status(),
-                'body' => $response->body()
-            ]);
+        if ($result['success']) {
             return [
-                'success' => false,
-                'error' => 'AI service temporarily unavailable'
+                'success' => true,
+                'analysis' => $result['text']
             ];
         }
-
-        $data = $response->json();
-
-        if (isset($data['error'])) {
-            Log::error('LabResultAnalysisService: API returned error', $data['error']);
-            return [
-                'success' => false,
-                'error' => 'AI service error'
-            ];
-        }
-
-        if (!isset($data['candidates'][0]['content']['parts'][0]['text'])) {
-            Log::error('LabResultAnalysisService: Invalid API response format', $data);
-            return [
-                'success' => false,
-                'error' => 'Invalid AI response'
-            ];
-        }
-
-        $analysis = $data['candidates'][0]['content']['parts'][0]['text'];
 
         return [
-            'success' => true,
-            'analysis' => $analysis
+            'success' => false,
+            'error' => GeminiFailure::describe('LabResultAnalysisService', $result)
         ];
     }
 

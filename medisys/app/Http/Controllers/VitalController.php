@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesStaff;
 use App\Models\Vital;
 use App\Models\Patient;
 use App\Services\AlertService;
@@ -10,15 +11,14 @@ use Illuminate\Support\Facades\Auth;
 
 class VitalController extends Controller
 {
+    use AuthorizesStaff;
+
     /**
      * Show the form for creating a new vital.
      */
     public function create(Patient $patient)
     {
-        // Check if user is a nurse or has permission
-        if (Auth::user()->role !== 'nurse' && Auth::user()->role !== 'admin' && Auth::user()->role !== 'doctor') {
-            abort(403, 'Unauthorized access');
-        }
+        $this->authorizeClinicalStaff();
 
         return view('vitals.create', compact('patient'));
     }
@@ -28,10 +28,7 @@ class VitalController extends Controller
      */
     public function store(Request $request, Patient $patient)
     {
-        // Check if user is a nurse or has permission
-        if (Auth::user()->role !== 'nurse' && Auth::user()->role !== 'admin' && Auth::user()->role !== 'doctor') {
-            abort(403, 'Unauthorized access');
-        }
+        $this->authorizeClinicalStaff();
 
         $validated = $request->validate([
             'blood_pressure_systolic' => 'required|integer|min:50|max:250',
@@ -74,10 +71,7 @@ class VitalController extends Controller
      */
     public function index(Patient $patient)
     {
-        // Check if user has permission to view patient vitals
-        if (!in_array(Auth::user()->role, ['nurse', 'admin', 'doctor'])) {
-            abort(403, 'Unauthorized access');
-        }
+        $this->authorizeClinicalStaff();
 
         $vitals = Vital::forPatient($patient->id)
             ->latest()
@@ -92,10 +86,7 @@ class VitalController extends Controller
      */
     public function showPatient(Patient $patient)
     {
-        // Check if user has permission to view patient
-        if (!in_array(Auth::user()->role, ['nurse', 'admin', 'doctor'])) {
-            abort(403, 'Unauthorized access');
-        }
+        $this->authorizeClinicalStaff();
 
         $latestVitals = Vital::forPatient($patient->id)
             ->latest()

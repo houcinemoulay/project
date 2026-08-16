@@ -2,30 +2,29 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ApiResponses;
+use App\Http\Controllers\Concerns\SearchesColumns;
 use App\Http\Controllers\Controller;
 use App\Models\Patient;
 use App\Services\RecommendationService;
+use App\Support\PublicFiles;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class PatientController extends Controller
 {
+    use ApiResponses;
+    use SearchesColumns;
+
+    private const DETAIL_RELATIONS = ['medicalRecords.doctor.user', 'ordonnances', 'appointments.doctor.user'];
+
     public function index(Request $request)
     {
         $query = Patient::query();
 
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%$search%")
-                  ->orWhere('phone', 'like', "%$search%")
-                  ->orWhere('nfc_uid', $search);
-            });
-        }
+        $this->applySearch($query, $request->search, ['name', 'phone'], ['nfc_uid']);
 
-        $patients = $query->latest()->paginate(15);
-
-        return response()->json(['success' => true, 'data' => $patients]);
+        return $this->ok($query->latest()->paginate(15));
     }
 
     public function store(Request $request)
@@ -45,25 +44,14 @@ class PatientController extends Controller
             'photo'             => 'nullable|image|max:2048',
         ]);
 
-        $data = $validated;
-        if ($request->hasFile('photo')) {
-            $data['photo'] = $request->file('photo')->store('patients', 'public');
-        }
-        $patient = Patient::create($data);
+        $patient = Patient::create($this->withPhoto($request, $validated));
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Patient created successfully.',
-            'data'    => $patient,
-        ], 201);
+        return $this->created($patient, 'Patient created successfully.');
     }
 
     public function show(Patient $patient)
     {
-        return response()->json([
-            'success' => true,
-            'data'    => $patient->load(['medicalRecords.doctor.user', 'ordonnances', 'appointments.doctor.user']),
-        ]);
+        return $this->ok($patient->load(self::DETAIL_RELATIONS));
     }
 
     public function update(Request $request, Patient $patient)
@@ -84,23 +72,16 @@ class PatientController extends Controller
             'photo'             => 'nullable|image|max:2048',
         ]);
 
-        $data = $validated;
-        if ($request->hasFile('photo')) {
-            $data['photo'] = $request->file('photo')->store('patients', 'public');
-        }
-        $patient->update($data);
+        $patient->update($this->withPhoto($request, $validated));
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Patient updated successfully.',
-            'data'    => $patient->fresh(),
-        ]);
+        return $this->ok($patient->fresh(), 'Patient updated successfully.');
     }
 
     public function destroy(Patient $patient)
     {
         $patient->delete();
-        return response()->json(['success' => true, 'message' => 'Patient deleted successfully.']);
+
+        return $this->message('Patient deleted successfully.');
     }
 
     public function history(Patient $patient)
@@ -110,8 +91,7 @@ class PatientController extends Controller
             ->orderBy('visit_date', 'desc')
             ->get();
 
-        return response()->json([
-            'success' => true,
+        return $this->ok(extra: [
             'patient' => [
                 'id'   => $patient->id,
                 'name' => $patient->name,
@@ -126,10 +106,20 @@ class PatientController extends Controller
         // For authenticated patient (NFC login)
         $patient = $request->user();
 
-        return response()->json([
-            'success' => true,
-            'data'    => $patient->load(['medicalRecords.doctor.user', 'ordonnances', 'appointments.doctor.user']),
-        ]);
+        return $this->ok($patient->load(self::DETAIL_RELATIONS));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function withPhoto(Request $request, array $data): array
+    {
+        if ($request->hasFile('photo')) {
+            $data['photo'] = PublicFiles::store($request->file('photo'), 'patients');
+        }
+
+        return $data;
     }
 
     /**
@@ -138,8 +128,7 @@ class PatientController extends Controller
     public function recommendations(Patient $patient)
     {
         try {
-            $recommendationService = new RecommendationService();
-            $result = $recommendationService->generateRecommendations($patient);
+            $result = (new RecommendationService())->generateRecommendations($patient);
 
             return response()->json([
                 'success' => $result['success'],
@@ -148,10 +137,7 @@ class PatientController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to generate recommendations: ' . $e->getMessage()
-            ], 500);
+            return $this->failure('Failed to generate recommendations: ' . $e->getMessage(), 500);
         }
     }
 }
