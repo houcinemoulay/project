@@ -5,12 +5,10 @@ use App\Http\Controllers\ContactController;
 use App\Http\Controllers\Admin\ContactMessageController;
 use App\Http\Controllers\Admin\FraudAttemptController;
 use App\Http\Controllers\GoogleAIController;
-use App\Http\Controllers\OpenAIController;
 
 Route::get('/', fn() => redirect('/login'));
 Route::get('/login', fn() => view('auth.login'))->name('login');
 Route::get('/public-booking', fn() => view('appointments.public-booking'));
-Route::get('/test-google-ai', [OpenAIController::class, 'testGoogleAI']);
 Route::get('/lang/{lang}', [App\Http\Controllers\LanguageController::class, 'switch'])->name('lang.switch');
 
 Route::get('/contact', [ContactController::class, 'show'])->name('contact.show');

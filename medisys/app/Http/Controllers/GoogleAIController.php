@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class GoogleAIController extends Controller
 {
@@ -15,24 +16,28 @@ class GoogleAIController extends Controller
     public function sendMessage(Request $request)
     {
         $request->validate([
-            'message' => 'required|string'
+            'message' => 'required|string|max:1000',
         ]);
 
-        $apiKey = env('GEMINI_API_KEY', env('GOOGLE_API_KEY'));
+        $apiKey = config('services.gemini.key');
 
-        // Debug: Check if API key is available
         if (!$apiKey) {
+            Log::warning('Medical chat called without a configured Gemini API key.');
+
             return response()->json([
-                'error' => 'API key not configured. Please add GOOGLE_API_KEY or GEMINI_API_KEY to your .env file.',
-                'reply' => 'Chat bot is not configured. Please contact administrator.'
-            ], 500);
+                'reply' => 'Chat bot is not configured. Please contact administrator.',
+            ], 503);
         }
 
         $systemPrompt = "You are a medical assistant. Provide general medical advice only based on trusted sources. Do not provide diagnosis. Always recommend consulting a doctor.";
 
+        $unavailable = response()->json([
+            'reply' => 'Sorry, I am currently unavailable. Please try again later.',
+        ], 503);
+
         try {
             $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" . $apiKey;
-            
+
             $payload = [
                 "contents" => [
                     [
@@ -46,45 +51,35 @@ class GoogleAIController extends Controller
             $response = Http::timeout(30)->post($url, $payload);
 
             if ($response->failed()) {
-                $errorDetails = [
+                Log::error('Gemini API request failed', [
                     'status' => $response->status(),
-                    'body' => $response->body(),
-                    'headers' => $response->headers()
-                ];
-                
-                return response()->json([
-                    'error' => 'API request failed: ' . json_encode($errorDetails),
-                    'reply' => 'Sorry, I am currently unavailable. Please try again later.'
-                ], 500);
+                    'body'   => $response->body(),
+                ]);
+
+                return $unavailable;
             }
 
             $data = $response->json();
 
             if (isset($data['error'])) {
-                return response()->json([
-                    'error' => 'API Error: ' . json_encode($data['error']),
-                    'reply' => 'Sorry, I am currently unavailable. Please try again later.'
-                ], 500);
+                Log::error('Gemini API returned an error', ['error' => $data['error']]);
+
+                return $unavailable;
             }
 
             if (!isset($data['candidates'][0]['content']['parts'][0]['text'])) {
-                return response()->json([
-                    'error' => 'Invalid API response format: ' . json_encode($data),
-                    'reply' => 'Sorry, I received an invalid response. Please try again later.'
-                ], 500);
+                Log::error('Gemini API returned an unexpected response format.');
+
+                return $unavailable;
             }
 
-            $reply = $data['candidates'][0]['content']['parts'][0]['text'];
-
             return response()->json([
-                'reply' => $reply
+                'reply' => $data['candidates'][0]['content']['parts'][0]['text'],
             ]);
-
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Exception: ' . $e->getMessage(),
-                'reply' => 'Sorry, I am currently unavailable. Please try again later.'
-            ], 500);
+            Log::error('Gemini API request threw an exception', ['exception' => $e->getMessage()]);
+
+            return $unavailable;
         }
     }
 }

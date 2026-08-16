@@ -35,13 +35,13 @@ return [
         'sitekey' => env('RECAPTCHA_SITE_KEY'),
         'secret' => env('RECAPTCHA_SECRET_KEY'),
     ],
-    'recaptcha' => [
-        'sitekey' => env('RECAPTCHA_SITE_KEY'),
-        'secret' => env('RECAPTCHA_SECRET_KEY'),
-    ],
 
     'openai' => [
         'key' => env('OPENAI_API_KEY'),
+    ],
+
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY', env('GOOGLE_API_KEY')),
     ],
 
 ];

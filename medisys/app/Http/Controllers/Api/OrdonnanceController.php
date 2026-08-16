@@ -124,8 +124,13 @@ class OrdonnanceController extends Controller
         ]);
     }
 
-    public function toggleTaken(Ordonnance $ordonnance)
+    public function toggleTaken(Request $request, Ordonnance $ordonnance)
     {
+        $user = $request->user();
+        if ($user instanceof \App\Models\Patient && $ordonnance->patient_id !== $user->id) {
+            return response()->json(['success' => false, 'message' => 'Access denied.'], 403);
+        }
+
         $ordonnance->is_taken = !$ordonnance->is_taken;
         $ordonnance->save();
 
@@ -147,9 +152,9 @@ class OrdonnanceController extends Controller
      */
     public function generatePdf(Ordonnance $ordonnance, Request $request)
     {
-        // Allow token via query string for direct link access
-        if ($request->has('token') && !$request->bearerToken()) {
-            $request->headers->set('Authorization', 'Bearer ' . $request->token);
+        $user = $request->user();
+        if ($user instanceof \App\Models\Patient && $ordonnance->patient_id !== $user->id) {
+            return response()->json(['success' => false, 'message' => 'Access denied.'], 403);
         }
 
         $ordonnance->load(['patient', 'doctor.user']);

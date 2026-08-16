@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Chat;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class MedicalChatController extends Controller
 {
@@ -25,8 +26,14 @@ class MedicalChatController extends Controller
 
         $systemPrompt = "You are a medical assistant. Provide general medical advice only based on trusted sources. Do not provide diagnosis. Always recommend consulting a doctor.";
 
+        $apiKey = config('services.gemini.key');
+
+        if (!$apiKey) {
+            return redirect()->route('medical-chat.index')
+                ->with('error', 'The medical assistant is not configured.');
+        }
+
         try {
-            $apiKey = env('GEMINI_API_KEY', 'AIzaSyCTJdL_lhpwc3F0D2EBvbm0GDVdpBJnKxw');
             $response = Http::post(
                 "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=" . $apiKey,
                 [
@@ -47,7 +54,8 @@ class MedicalChatController extends Controller
                 $botResponse = 'Error: Unable to reach the medical assistant service at the moment.';
             }
         } catch (\Exception $e) {
-            $botResponse = 'Error: ' . $e->getMessage();
+            Log::error('Medical chat request failed', ['exception' => $e->getMessage()]);
+            $botResponse = 'Error: Unable to reach the medical assistant service at the moment.';
         }
 
         Chat::create([

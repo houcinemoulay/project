@@ -604,7 +604,7 @@ function renderHistory(records, ords) {
 
 async function loadDoctors() {
   try {
-    const r = await fetch('/api/doctors', {headers: h});
+    const r = await fetch('/api/public/doctors', {headers: h});
     const {data} = await r.json();
     const docs = data.data || data;
     const sel = document.getElementById('book-doctor');
