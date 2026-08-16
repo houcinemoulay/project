@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Patient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -16,13 +17,23 @@ class UploadController extends Controller
             'entity_id' => 'required|integer',
         ]);
 
-        $path = $request->file('photo')->store('photos/' . $request->type, 'public');
+        // A patient (NFC token) may only replace their own photo
+        $authenticated = $request->user();
+        if ($authenticated instanceof Patient
+            && ($request->type !== 'patient' || (int) $request->entity_id !== $authenticated->id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Access denied.',
+            ], 403);
+        }
 
         if ($request->type === 'doctor') {
             $model = \App\Models\Doctor::findOrFail($request->entity_id);
         } else {
-            $model = \App\Models\Patient::findOrFail($request->entity_id);
+            $model = Patient::findOrFail($request->entity_id);
         }
+
+        $path = $request->file('photo')->store('photos/' . $request->type, 'public');
 
         // Delete old photo
         if ($model->photo && Storage::disk('public')->exists($model->photo)) {

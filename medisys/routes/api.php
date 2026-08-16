@@ -16,31 +16,41 @@ use App\Http\Controllers\Api\DoctorUnavailabilityController;
 use App\Http\Controllers\GoogleAIController;
 
 // ── Public ──────────────────────────────────────────────
-Route::post('/login',      [AuthController::class, 'login']);
-Route::post('/nfc-login',  [AuthController::class, 'nfcLogin']);
+Route::post('/login',      [AuthController::class, 'login'])->middleware('throttle:10,1');
+Route::post('/nfc-login',  [AuthController::class, 'nfcLogin'])->middleware('throttle:10,1');
 Route::get('/public/doctors', [DoctorController::class, 'index']); // For selecting doctor
 Route::get('/public/available-slots', [AppointmentController::class, 'getAvailableSlots']);
 Route::post('/public/book-appointment', [AppointmentController::class, 'publicBook'])
     ->middleware(['throttle:5,1', 'suspicious.booking']);
 
-Route::post('/medical-chat', [GoogleAIController::class, 'sendMessage']);
-// Patient lookup by NFC UID — no token creation, safe for pharmacy/lab sessions
-Route::middleware(['auth:sanctum'])->post('/nfc-lookup', [AuthController::class, 'nfcLookup']);
+// Public AI chat — rate limited to curb abuse of the upstream AI quota
+Route::post('/medical-chat', [GoogleAIController::class, 'sendMessage'])->middleware('throttle:10,1');
 
-// ── Authenticated (all staff roles) ─────────────────────
+// ── Authenticated (staff and patients) ──────────────────
 Route::middleware(['auth:sanctum'])->group(function () {
-
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+
+    // Photo upload (patients may only replace their own photo)
+    Route::post('/upload/photo', [UploadController::class, 'uploadPhoto']);
+
+    // Patients may read their own recommendations and tick off their own prescriptions
+    Route::get('/patients/{patient}/recommendations', [PatientController::class, 'recommendations']);
+    Route::patch('/ordonnances/{ordonnance}/toggle-taken', [OrdonnanceController::class, 'toggleTaken']);
+    Route::get('/ordonnances/{ordonnance}/pdf', [OrdonnanceController::class, 'generatePdf']);
+});
+
+// ── Authenticated (all staff roles) ─────────────────────
+Route::middleware(['auth:sanctum', 'staff'])->group(function () {
+
     Route::get('/dashboard', [DashboardController::class, 'stats']);
 
-    // Photo upload
-    Route::post('/upload/photo', [UploadController::class, 'uploadPhoto']);
+    // Patient lookup by NFC UID — no token creation, safe for pharmacy/lab sessions
+    Route::post('/nfc-lookup', [AuthController::class, 'nfcLookup']);
 
     // Patients
     Route::apiResource('patients', PatientController::class);
     Route::get('/patients/{patient}/history', [PatientController::class, 'history']);
-    Route::get('/patients/{patient}/recommendations', [PatientController::class, 'recommendations']);
 
     // Medical Records (read for all, delete for admins and doctors only)
     Route::get('/medical-records', [MedicalRecordController::class, 'index']);
@@ -59,20 +69,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/ordonnances/{ordonnance}', [OrdonnanceController::class, 'update']);
         Route::delete('/ordonnances/{ordonnance}', [OrdonnanceController::class, 'destroy']);
     });
-    Route::get('/ordonnances/{ordonnance}/pdf', [OrdonnanceController::class, 'generatePdf']);
     Route::post('/ordonnances/by-nfc', [OrdonnanceController::class, 'byNfcUid']);
     Route::patch('/ordonnances/{ordonnance}/dispense', [OrdonnanceController::class, 'dispense']);
-    Route::patch('/ordonnances/{ordonnance}/toggle-taken', [OrdonnanceController::class, 'toggleTaken']);
 
     // Appointments
     Route::apiResource('appointments', AppointmentController::class);
 
-    // Doctors (read for all, write for admin)
+    // Doctors (read for all staff, write for admin — see admin-only group below)
     Route::get('/doctors', [DoctorController::class, 'index']);
     Route::get('/doctors/{doctor}', [DoctorController::class, 'show']);
-    Route::post('/doctors', [DoctorController::class, 'store']);
-    Route::patch('/doctors/{doctor}', [DoctorController::class, 'update']);
-    Route::delete('/doctors/{doctor}', [DoctorController::class, 'destroy']);
 
     // Lab Results — lab can upload, doctor/admin can view
     Route::get('/lab-results', [LabResultController::class, 'index']);
@@ -96,7 +101,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Admin-only management
     Route::middleware(['role:admin'])->group(function () {
         Route::post('/doctors', [DoctorController::class, 'store']);
-        Route::put('/doctors/{doctor}', [DoctorController::class, 'update']);
+        Route::match(['put', 'patch'], '/doctors/{doctor}', [DoctorController::class, 'update']);
         Route::delete('/doctors/{doctor}', [DoctorController::class, 'destroy']);
         Route::apiResource('pharmacies', PharmacyController::class);
         Route::apiResource('laboratories', LaboratoryController::class);
@@ -113,7 +118,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 
 // ── Patient (NFC authenticated) ──────────────────────────
-Route::middleware(['auth:sanctum'])->prefix('patient')->group(function () {
+Route::middleware(['auth:sanctum', 'patient'])->prefix('patient')->group(function () {
     Route::get('/profile', [PatientController::class, 'profile']);
     Route::post('/appointments/book', [AppointmentController::class, 'patientBook']);
     Route::get('/ordonnances', [OrdonnanceController::class, 'forPatient']);

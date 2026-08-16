@@ -135,8 +135,13 @@ class PatientController extends Controller
     /**
      * Get recommendations for a patient
      */
-    public function recommendations(Patient $patient)
+    public function recommendations(Request $request, Patient $patient)
     {
+        $user = $request->user();
+        if ($user instanceof Patient && $user->id !== $patient->id) {
+            return response()->json(['success' => false, 'message' => 'Access denied.'], 403);
+        }
+
         try {
             $recommendationService = new RecommendationService();
             $result = $recommendationService->generateRecommendations($patient);

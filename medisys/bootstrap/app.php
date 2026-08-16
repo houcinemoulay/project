@@ -26,6 +26,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // Register role-based middleware alias
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+            'staff' => \App\Http\Middleware\EnsureStaffUser::class,
+            'patient' => \App\Http\Middleware\EnsurePatientUser::class,
             'nurse' => \App\Http\Middleware\NurseMiddleware::class,
             'suspicious.booking' => \App\Http\Middleware\DetectSuspiciousBooking::class,
         ]);
