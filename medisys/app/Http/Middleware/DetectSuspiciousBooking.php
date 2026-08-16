@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 use App\Models\FraudAttempt;
 use Carbon\Carbon;
@@ -66,13 +67,21 @@ class DetectSuspiciousBooking
 
     private function logFraudAttempt($ip, $userAgent, $payload, $email, $phone, $reason)
     {
-        FraudAttempt::create([
-            'ip_address' => $ip,
-            'user_agent' => $userAgent,
-            'payload' => $payload,
-            'email' => $email,
-            'phone' => $phone,
-            'reason' => $reason,
-        ]);
+        try {
+            FraudAttempt::create([
+                'ip_address' => $ip,
+                'user_agent' => $userAgent,
+                'payload' => $payload,
+                'email' => $email,
+                'phone' => $phone,
+                'reason' => $reason,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to record fraud attempt', [
+                'ip_address' => $ip,
+                'reason' => $reason,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 }

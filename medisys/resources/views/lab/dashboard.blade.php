@@ -380,6 +380,7 @@ async function loadPatientPrescriptions(patientId) {
       </div>
     `).join('');
   } catch (e) {
+    console.error('Prescriptions load error:', e);
     container.innerHTML = '<div style="text-align:center;color:#ef4444;padding:20px;">Error loading prescriptions.</div>';
   }
 }
@@ -387,11 +388,11 @@ async function loadPatientPrescriptions(patientId) {
 async function togglePrescriptionTaken(id) {
   try {
     const r = await fetch(`/api/ordonnances/${id}/toggle-taken`, {method:'PATCH', headers: h});
-    if (r.ok) {
-      loadPatientPrescriptions(currentPatientId);
-    }
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
+    loadPatientPrescriptions(currentPatientId);
   } catch (e) {
-    console.error(e);
+    console.error('Toggle prescription error:', e);
+    alert('Could not update the prescription status. Please try again.');
   }
 }
 

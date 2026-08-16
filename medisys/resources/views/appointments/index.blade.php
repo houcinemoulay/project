@@ -63,12 +63,20 @@
 const token = localStorage.getItem('auth_token') || '';
 const h = {'Content-Type':'application/json','Accept':'application/json','Authorization':'Bearer '+token};
 let userRole = '';
-try { userRole = JSON.parse(localStorage.getItem('auth_user')).role; } catch(e){}
+try { userRole = JSON.parse(localStorage.getItem('auth_user')).role; } catch(e){ console.error('Invalid cached auth_user:', e); }
 
 async function loadAppointments() {
-  const r = await fetch('/api/appointments', {headers: h});
-  const {data} = await r.json();
   const tb = document.getElementById('app-body');
+  let data;
+  try {
+    const r = await fetch('/api/appointments', {headers: h});
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
+    ({data} = await r.json());
+  } catch(e) {
+    console.error('Appointments load error:', e);
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:24px;color:#ef4444;">Error loading appointments</td></tr>';
+    return;
+  }
   if (!data || !data.length) { tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:24px;color:#94a3b8;">No appointments found</td></tr>'; return; }
   
   tb.innerHTML = data.map(a => {
@@ -92,12 +100,14 @@ async function loadAppointments() {
 
 async function loadSelects() {
   const rp = await fetch('/api/patients', {headers: h});
+  if (!rp.ok) throw new Error(`Patients request failed with status ${rp.status}`);
   const dp = await rp.json();
   const selP = document.getElementById('a-patient');
   (dp.data?.data || dp.data || []).forEach(p => selP.innerHTML += `<option value="${p.id}">${p.name}</option>`);
 
   if (userRole === 'admin') {
     const rd = await fetch('/api/doctors', {headers: h});
+    if (!rd.ok) throw new Error(`Doctors request failed with status ${rd.status}`);
     const dd = await rd.json();
     const selD = document.getElementById('a-doctor');
     (dd.data?.data || dd.data || []).forEach(d => selD.innerHTML += `<option value="${d.id}">${d.name}</option>`);
@@ -126,20 +136,38 @@ document.getElementById('app-form').addEventListener('submit', async function(e)
   if (userRole === 'admin') {
     body.doctor_id = document.getElementById('a-doctor').value;
   }
-  const r = await fetch('/api/appointments', {method:'POST', headers: h, body: JSON.stringify(body)});
-  const data = await r.json();
-  if (data.success) { closeModal(); loadAppointments(); }
-  else alert(JSON.stringify(data.errors || data.message));
+  try {
+    const r = await fetch('/api/appointments', {method:'POST', headers: h, body: JSON.stringify(body)});
+    const data = await r.json();
+    if (!r.ok || !data.success) {
+      alert(JSON.stringify(data.errors || data.message || `Request failed with status ${r.status}`));
+      return;
+    }
+    closeModal();
+    loadAppointments();
+  } catch(e) {
+    console.error('Create appointment error:', e);
+    alert('Could not save the appointment. Please try again.');
+  }
 });
 
 async function deleteApp(id) {
   if (!confirm('Cancel/Delete this appointment?')) return;
-  await fetch(`/api/appointments/${id}`, {method:'DELETE',headers:h});
-  loadAppointments();
+  try {
+    const r = await fetch(`/api/appointments/${id}`, {method:'DELETE',headers:h});
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
+    loadAppointments();
+  } catch(e) {
+    console.error('Delete appointment error:', e);
+    alert('Could not delete the appointment. Please try again.');
+  }
 }
 
 loadAppointments();
-loadSelects();
+loadSelects().catch(e => {
+  console.error('Appointment form options load error:', e);
+  alert('Could not load patients or doctors for the appointment form.');
+});
 </script>
 @endpush
 @endsection

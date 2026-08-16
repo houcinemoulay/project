@@ -18,7 +18,7 @@ class PrescriptionAIService
     public function generateExplanation(string $medications, string $instructions, string $language = 'ar'): array
     {
         try {
-            $apiKey = env('GEMINI_API_KEY', env('GOOGLE_API_KEY'));
+            $apiKey = config('services.gemini.key');
             
             if (!$apiKey) {
                 Log::error('PrescriptionAIService: API key not configured');
@@ -84,7 +84,7 @@ class PrescriptionAIService
                 'explanation' => $explanation
             ];
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('PrescriptionAIService: Exception occurred', [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()

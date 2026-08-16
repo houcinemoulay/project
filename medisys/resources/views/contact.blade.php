@@ -20,10 +20,28 @@
                 </div>
             @endif
 
+            @if(session('warning'))
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>{{ session('warning') }}</span>
+                </div>
+            @endif
+
             @if(session('error'))
                 <div class="alert alert-error">
                     <i class="fas fa-exclamation-circle"></i>
                     <span>{{ session('error') }}</span>
+                </div>
+            @endif
+
+            @if($errors->any())
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <ul style="margin:0;padding-left:18px;">
+                        @foreach($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
                 </div>
             @endif
 
@@ -334,6 +352,12 @@
   background: #fff1f2;
   color: #9f1239;
   border: 1px solid #fecdd3;
+}
+
+.alert-warning {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
 }
 
 .form-actions {

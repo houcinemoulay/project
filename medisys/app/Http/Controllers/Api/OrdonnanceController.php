@@ -7,8 +7,8 @@ use App\Jobs\GeneratePrescriptionExplanationJob;
 use App\Models\Ordonnance;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Bus;
 
 class OrdonnanceController extends Controller
 {
@@ -63,12 +63,23 @@ class OrdonnanceController extends Controller
             'status'    => 'active',
         ]));
 
-        // Dispatch AI explanation job asynchronously
-        GeneratePrescriptionExplanationJob::dispatch($ordonnance);
+        $explanationQueued = true;
+        try {
+            GeneratePrescriptionExplanationJob::dispatch($ordonnance);
+        } catch (\Throwable $e) {
+            $explanationQueued = false;
+            Log::error('Failed to queue prescription explanation job', [
+                'ordonnance_id' => $ordonnance->id,
+                'message'       => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'success' => true,
-            'message' => 'Prescription created. AI explanation is being generated.',
+            'message' => $explanationQueued
+                ? 'Prescription created. AI explanation is being generated.'
+                : 'Prescription created, but the AI explanation could not be queued.',
+            'explanation_queued' => $explanationQueued,
             'data'    => $ordonnance->load(['patient', 'doctor.user']),
         ], 201);
     }
@@ -160,8 +171,14 @@ class OrdonnanceController extends Controller
         $filename = "ordonnance_{$ordonnance->id}_{$ordonnance->patient->name}.pdf";
         $path     = "ordonnances/{$filename}";
 
-        Storage::put("public/{$path}", $pdf->output());
-        $ordonnance->update(['pdf_path' => $path]);
+        if (Storage::put("public/{$path}", $pdf->output())) {
+            $ordonnance->update(['pdf_path' => $path]);
+        } else {
+            Log::error('Failed to archive ordonnance PDF', [
+                'ordonnance_id' => $ordonnance->id,
+                'path'          => $path,
+            ]);
+        }
 
         return $pdf->download($filename);
     }

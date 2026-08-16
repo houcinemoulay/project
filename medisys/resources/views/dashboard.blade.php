@@ -335,6 +335,11 @@ async function loadDashboard() {
 
   } catch(e) {
     console.error('Dashboard load error:', e);
+    const errorRow = '<tr><td colspan="4" style="text-align:center;padding:20px;color:#ef4444;">Error loading dashboard data</td></tr>';
+    const rb = document.getElementById('recent-records-body');
+    const ab = document.getElementById('upcoming-appt-body');
+    if (rb) rb.innerHTML = errorRow;
+    if (ab) ab.innerHTML = errorRow;
   }
 }
 
@@ -404,18 +409,31 @@ async function saveUnavailability() {
   const reason = document.getElementById('u-reason').value;
   if (!start) return;
 
-  const r = await fetch('/api/doctor-unavailabilities', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({start_date: start, end_date: end, reason})
-  });
-  if (r.ok) { closeUnavailabilityModal(); loadUnavailabilities(); }
+  try {
+    const r = await fetch('/api/doctor-unavailabilities', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({start_date: start, end_date: end, reason})
+    });
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
+    closeUnavailabilityModal();
+    loadUnavailabilities();
+  } catch(e) {
+    console.error('Save unavailability error:', e);
+    alert('Could not save the unavailability. Please try again.');
+  }
 }
 
 async function deleteUnavailability(id) {
   if (!confirm('Delete this entry?')) return;
-  await fetch(`/api/doctor-unavailabilities/${id}`, {method: 'DELETE', headers});
-  loadUnavailabilities();
+  try {
+    const r = await fetch(`/api/doctor-unavailabilities/${id}`, {method: 'DELETE', headers});
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
+    loadUnavailabilities();
+  } catch(e) {
+    console.error('Delete unavailability error:', e);
+    alert('Could not delete the entry. Please try again.');
+  }
 }
 
 function openFinancialModal(id, name, currentPaid) {
@@ -443,7 +461,8 @@ async function saveFinancials() {
       alert('Failed to update financials.');
     }
   } catch(e) {
-    console.error(e);
+    console.error('Save financials error:', e);
+    alert('Could not update financials. Please try again.');
   }
 }
 
@@ -457,7 +476,7 @@ loadDashboard = async function() {
   const userJson = localStorage.getItem('auth_user');
   let user = null;
   if (userJson) {
-    try { user = JSON.parse(userJson); } catch(e) {}
+    try { user = JSON.parse(userJson); } catch(e) { console.error('Invalid cached auth_user:', e); }
   }
   if (!user && window.serverUser) user = window.serverUser;
 
@@ -483,6 +502,7 @@ loadDashboard();
   const container = document.getElementById('dashboard-alerts-content');
   try {
     const r = await fetch('/api/alerts/recent', { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
     const data = await r.json();
     if (data.alerts && data.alerts.length > 0) {
       let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
@@ -511,6 +531,10 @@ loadDashboard();
     }
   } catch(e) {
     console.error('Error loading alerts:', e);
+    if (container && section) {
+      container.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px;"><i class="fas fa-exclamation-triangle"></i> Could not load patient alerts</div>';
+      section.style.display = 'block';
+    }
   }
 })();
 </script>

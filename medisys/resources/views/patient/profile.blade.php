@@ -408,7 +408,11 @@ async function loadProfile() {
     loadRecommendations();
 
   } catch(e) {
-    console.error(e);
+    console.error('Profile load error:', e);
+    const nameEl = document.getElementById('p-name');
+    if (nameEl) {
+      nameEl.textContent = currentLang === 'ar' ? 'تعذر تحميل الملف' : 'Could not load profile';
+    }
   }
 }
 
@@ -430,10 +434,11 @@ function renderAppointments(apps) {
 }
 
 async function loadOrdonnances() {
+  const container = document.getElementById('ord-container');
   try {
     const r = await fetch('/api/patient/ordonnances', {headers: h});
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
     const {data} = await r.json();
-    const container = document.getElementById('ord-container');
     const emptyMsg = currentLang === 'ar' ? translations.ar["No prescriptions found"] : "No prescriptions found";
     if (!data || !data.length) {
       container.innerHTML = `<div style="text-align:center;padding:24px;color:#94a3b8;">${emptyMsg}</div>`;
@@ -500,7 +505,10 @@ async function loadOrdonnances() {
             </div>`).join('')}
         </div>
       </div>`).join('');
-  } catch(e) {}
+  } catch(e) {
+    console.error('Prescriptions load error:', e);
+    container.innerHTML = `<div style="text-align:center;padding:24px;color:#e94560;">${currentLang === 'ar' ? 'خطأ في تحميل الوصفات' : 'Error loading prescriptions'}</div>`;
+  }
 }
 
 async function toggleTaken(id) {
@@ -509,11 +517,14 @@ async function toggleTaken(id) {
       method: 'PATCH',
       headers: h
     });
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
     const data = await r.json();
-    if (data.success) {
-      loadOrdonnances();
-    }
-  } catch(e) {}
+    if (!data.success) throw new Error(data.message || 'Update rejected');
+    loadOrdonnances();
+  } catch(e) {
+    console.error('Toggle prescription error:', e);
+    alert(currentLang === 'ar' ? 'تعذر تحديث حالة الوصفة' : 'Could not update the prescription status. Please try again.');
+  }
 }
 
 function loadRecommendations() {
@@ -526,9 +537,13 @@ function loadRecommendations() {
     fetch(`/api/patients/${patientId}/recommendations`, {
       method: 'GET',
       headers: h
-    }).then(r => r.json())
+    }).then(r => {
+      if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
+      return r.json();
+    })
     .then(data => {
-      if (data.success && data.data && data.data.length > 0) {
+      if (!data.success) throw new Error(data.message || 'Recommendations unavailable');
+      if (data.data && data.data.length > 0) {
         container.innerHTML = data.data.map(rec => `
           <div class="rec-card" style="border-left:4px solid ${rec.priority === 'urgent' ? '#dc2626' : rec.priority === 'high' ? '#f59e0b' : '#3b82f6'};">
             <div class="rec-header">
@@ -603,15 +618,19 @@ function renderHistory(records, ords) {
 }
 
 async function loadDoctors() {
+  const sel = document.getElementById('book-doctor');
   try {
     const r = await fetch('/api/doctors', {headers: h});
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
     const {data} = await r.json();
     const docs = data.data || data;
-    const sel = document.getElementById('book-doctor');
     const loadMsg = currentLang === 'ar' ? "اختر الطبيب..." : "Select a doctor...";
     sel.innerHTML = `<option value="">${loadMsg}</option>`;
     docs.forEach(d => sel.innerHTML += `<option value="${d.id}">${d.name} — ${d.specialty}</option>`);
-  } catch(e) {}
+  } catch(e) {
+    console.error('Doctors load error:', e);
+    sel.innerHTML = `<option value="">${currentLang === 'ar' ? 'تعذر تحميل الأطباء' : 'Could not load doctors'}</option>`;
+  }
 }
 
 async function bookAppointment() {
@@ -659,11 +678,14 @@ async function uploadPhoto(input) {
       headers: {'Accept':'application/json','Authorization':'Bearer '+token},
       body: formData
     });
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
     const data = await r.json();
-    if (data.success) {
-      document.getElementById('p-avatar').innerHTML = `<img src="${data.url}?t=${Date.now()}" alt="Photo">`;
-    }
-  } catch(e) {}
+    if (!data.success) throw new Error(data.message || 'Upload rejected');
+    document.getElementById('p-avatar').innerHTML = `<img src="${data.url}?t=${Date.now()}" alt="Photo">`;
+  } catch(e) {
+    console.error('Photo upload error:', e);
+    alert(currentLang === 'ar' ? 'تعذر تحميل الصورة' : 'Could not upload the photo. Please try again.');
+  }
 }
 
 // Set default datetime for booking

@@ -32,7 +32,7 @@ class LabResultAnalysisService
                 'recommendations' => $this->generateRecommendations($analysis, $patient)
             ];
             
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('LabResultAnalysisService error', [
                 'patient_id' => $patient->id,
                 'message' => $e->getMessage(),
@@ -41,7 +41,7 @@ class LabResultAnalysisService
 
             return [
                 'success' => false,
-                'message' => 'Failed to analyze lab results: ' . $e->getMessage(),
+                'message' => 'Failed to analyze lab results',
                 'recommendations' => []
             ];
         }
@@ -159,9 +159,13 @@ class LabResultAnalysisService
      */
     private function generateAIAnalysis(Patient $patient, array $labResults, array $medicalRecords): array
     {
-        $apiKey = env('GEMINI_API_KEY', env('GOOGLE_API_KEY'));
+        $apiKey = config('services.gemini.key');
         
         if (!$apiKey) {
+            Log::error('LabResultAnalysisService: API key not configured', [
+                'patient_id' => $patient->id,
+            ]);
+
             return [
                 'success' => false,
                 'error' => 'AI service not configured'
@@ -177,7 +181,7 @@ class LabResultAnalysisService
 
         $prompt = $this->buildAnalysisPrompt($patientInfo, $labResults, $medicalRecords);
 
-        $response = Http::withHeaders([
+        $response = Http::timeout(30)->withHeaders([
             'Content-Type' => 'application/json',
         ])->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={$apiKey}", [
             'contents' => [

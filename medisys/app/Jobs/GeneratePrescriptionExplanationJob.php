@@ -26,7 +26,7 @@ class GeneratePrescriptionExplanationJob implements ShouldQueue
      *
      * @var int
      */
-    public $retryAfter = 60;
+    public $backoff = 60;
 
     /**
      * The prescription instance.
@@ -94,9 +94,10 @@ class GeneratePrescriptionExplanationJob implements ShouldQueue
                 ]);
             }
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Exception in GeneratePrescriptionExplanationJob', [
                 'ordonnance_id' => $this->ordonnance->id,
+                'attempt' => $this->attempts(),
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -106,11 +107,21 @@ class GeneratePrescriptionExplanationJob implements ShouldQueue
                 'explanation_generated' => false
             ]);
 
-            // Re-queue the job if we have retries left
-            if ($this->attempts() < $this->tries) {
-                $this->release($this->retryAfter);
-            }
+            // Let the queue worker handle retries and, once attempts are
+            // exhausted, record the job in the failed_jobs table.
+            throw $e;
         }
+    }
+
+    /**
+     * Handle a job failure once all retries are exhausted.
+     */
+    public function failed(\Throwable $exception): void
+    {
+        Log::error('GeneratePrescriptionExplanationJob failed permanently', [
+            'ordonnance_id' => $this->ordonnance->id,
+            'message' => $exception->getMessage(),
+        ]);
     }
 
     /**
