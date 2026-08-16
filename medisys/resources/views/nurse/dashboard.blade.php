@@ -297,6 +297,7 @@
   const container = document.getElementById('nurse-alerts-content');
   try {
     const r = await fetch('/api/alerts/recent', { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
     const data = await r.json();
     if (data.alerts && data.alerts.length > 0) {
       let html = '<div class="alerts-header"><h3><i class="fas fa-bell" style="color:#ef4444;"></i> Patient Alerts</h3><span class="alerts-badge">' + data.unread_count + ' new</span></div>';
@@ -319,18 +320,25 @@
     }
   } catch(e) {
     console.error('Error loading alerts:', e);
+    const section = document.getElementById('nurse-alerts-section');
+    if (container && section) {
+      container.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px;"><i class="fas fa-exclamation-triangle"></i> Could not load patient alerts</div>';
+      section.style.display = 'block';
+    }
   }
 })();
 
 async function dismissAlert(id, btn) {
   try {
-    await fetch('/api/alerts/' + id + '/read', { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '' } });
+    const r = await fetch('/api/alerts/' + id + '/read', { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '' } });
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
     const banner = btn.closest('.alert-banner');
     banner.style.opacity = '0';
     banner.style.transform = 'translateX(20px)';
     setTimeout(() => banner.remove(), 300);
   } catch(e) {
     console.error('Error dismissing alert:', e);
+    alert('Could not dismiss the alert. Please try again.');
   }
 }
 </script>

@@ -2,14 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\StoresUploadedFiles;
 use App\Http\Controllers\Controller;
 use App\Models\Patient;
 use App\Services\RecommendationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 class PatientController extends Controller
 {
+    use StoresUploadedFiles;
+
     public function index(Request $request)
     {
         $query = Patient::query();
@@ -47,7 +51,7 @@ class PatientController extends Controller
 
         $data = $validated;
         if ($request->hasFile('photo')) {
-            $data['photo'] = $request->file('photo')->store('patients', 'public');
+            $data['photo'] = $this->storeUploadedFile($request->file('photo'), 'patients');
         }
         $patient = Patient::create($data);
 
@@ -86,7 +90,7 @@ class PatientController extends Controller
 
         $data = $validated;
         if ($request->hasFile('photo')) {
-            $data['photo'] = $request->file('photo')->store('patients', 'public');
+            $data['photo'] = $this->storeUploadedFile($request->file('photo'), 'patients');
         }
         $patient->update($data);
 
@@ -145,12 +149,18 @@ class PatientController extends Controller
                 'success' => $result['success'],
                 'message' => $result['message'],
                 'data' => $result['data'] ?? []
+            ], $result['success'] ? 200 : 422);
+
+        } catch (\Throwable $e) {
+            Log::error('Failed to generate patient recommendations', [
+                'patient_id' => $patient->id,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
-        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to generate recommendations: ' . $e->getMessage()
+                'message' => 'Failed to generate recommendations. Please try again later.'
             ], 500);
         }
     }

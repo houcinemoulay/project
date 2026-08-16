@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\StoresUploadedFiles;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class UploadController extends Controller
 {
+    use StoresUploadedFiles;
+
     public function uploadPhoto(Request $request)
     {
         $request->validate([
@@ -16,21 +19,21 @@ class UploadController extends Controller
             'entity_id' => 'required|integer',
         ]);
 
-        $path = $request->file('photo')->store('photos/' . $request->type, 'public');
-
         if ($request->type === 'doctor') {
             $model = \App\Models\Doctor::findOrFail($request->entity_id);
         } else {
             $model = \App\Models\Patient::findOrFail($request->entity_id);
         }
 
-        // Delete old photo
-        if ($model->photo && Storage::disk('public')->exists($model->photo)) {
-            Storage::disk('public')->delete($model->photo);
-        }
+        $previousPhoto = $model->photo;
+        $path = $this->storeUploadedFile($request->file('photo'), 'photos/' . $request->type);
 
         $model->photo = $path;
         $model->save();
+
+        if ($previousPhoto && Storage::disk('public')->exists($previousPhoto)) {
+            Storage::disk('public')->delete($previousPhoto);
+        }
 
         return response()->json([
             'success' => true,
@@ -47,7 +50,7 @@ class UploadController extends Controller
             'note'       => 'nullable|string|max:500',
         ]);
 
-        $path = $request->file('file')->store('lab-results', 'public');
+        $path = $this->storeUploadedFile($request->file('file'), 'lab-results');
 
         return response()->json([
             'success' => true,

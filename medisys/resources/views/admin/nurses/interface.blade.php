@@ -562,25 +562,30 @@ function openAddNurseModal() {
 function editNurse(id) {
     // Load nurse data and open modal for editing
     fetch(`/api/admin/nurses/${id}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const nurse = data.data;
-                document.getElementById('modal-title').textContent = 'Edit Nurse';
-                document.getElementById('save-btn-text').textContent = 'Update Nurse';
-                document.getElementById('nurse-id').value = nurse.id;
-                document.getElementById('nurse-name').value = nurse.name;
-                document.getElementById('nurse-email').value = nurse.email;
-                document.getElementById('nurse-username').value = nurse.username;
-                document.getElementById('nurse-phone').value = nurse.phone || '';
-                document.getElementById('nurse-department').value = nurse.department || '';
-                document.getElementById('nurse-license').value = nurse.license_number || '';
-                document.getElementById('nurse-address').value = nurse.address || '';
-                clearErrors();
-                document.getElementById('nurse-modal').style.display = 'block';
-            }
+        .then(response => {
+            if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+            return response.json();
         })
-        .catch(error => console.error('Error loading nurse:', error));
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Nurse could not be loaded');
+            const nurse = data.data;
+            document.getElementById('modal-title').textContent = 'Edit Nurse';
+            document.getElementById('save-btn-text').textContent = 'Update Nurse';
+            document.getElementById('nurse-id').value = nurse.id;
+            document.getElementById('nurse-name').value = nurse.name;
+            document.getElementById('nurse-email').value = nurse.email;
+            document.getElementById('nurse-username').value = nurse.username;
+            document.getElementById('nurse-phone').value = nurse.phone || '';
+            document.getElementById('nurse-department').value = nurse.department || '';
+            document.getElementById('nurse-license').value = nurse.license_number || '';
+            document.getElementById('nurse-address').value = nurse.address || '';
+            clearErrors();
+            document.getElementById('nurse-modal').style.display = 'block';
+        })
+        .catch(error => {
+            console.error('Error loading nurse:', error);
+            showNotification('Could not load the nurse details', 'error');
+        });
 }
 
 function closeNurseModal() {

@@ -2,15 +2,19 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\StoresUploadedFiles;
 use App\Http\Controllers\Controller;
 use App\Models\Doctor;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
 class DoctorController extends Controller
 {
+    use StoresUploadedFiles;
+
     public function index()
     {
         $doctors = Doctor::with('user')
@@ -39,25 +43,31 @@ class DoctorController extends Controller
             'treatment_time' => 'nullable|integer|min:1',
         ]);
 
-        $user = User::create([
-            'name'     => $validated['name'],
-            'email'    => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'role'     => 'doctor',
-        ]);
+        $photoPath = $request->hasFile('photo')
+            ? $this->storeUploadedFile($request->file('photo'), 'doctors')
+            : null;
 
-        $doctor = Doctor::create([
-            'user_id'        => $user->id,
-            'specialty'      => $validated['specialty'],
-            'phone'          => $validated['phone'] ?? null,
-            'license_number' => $validated['license_number'] ?? null,
-            'bio'            => $validated['bio'] ?? null,
-            'photo'          => $request->hasFile('photo') ? $request->file('photo')->store('doctors', 'public') : null,
-            'working_days'   => $validated['working_days'] ?? null,
-            'working_hours_start' => $validated['working_hours_start'] ?? null,
-            'working_hours_end'   => $validated['working_hours_end'] ?? null,
-            'treatment_time' => $validated['treatment_time'] ?? 30,
-        ]);
+        $doctor = DB::transaction(function () use ($validated, $photoPath) {
+            $user = User::create([
+                'name'     => $validated['name'],
+                'email'    => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'role'     => 'doctor',
+            ]);
+
+            return Doctor::create([
+                'user_id'        => $user->id,
+                'specialty'      => $validated['specialty'],
+                'phone'          => $validated['phone'] ?? null,
+                'license_number' => $validated['license_number'] ?? null,
+                'bio'            => $validated['bio'] ?? null,
+                'photo'          => $photoPath,
+                'working_days'   => $validated['working_days'] ?? null,
+                'working_hours_start' => $validated['working_hours_start'] ?? null,
+                'working_hours_end'   => $validated['working_hours_end'] ?? null,
+                'treatment_time' => $validated['treatment_time'] ?? 30,
+            ]);
+        });
 
         return response()->json([
             'success' => true,
@@ -113,7 +123,7 @@ class DoctorController extends Controller
         }
 
         if ($request->hasFile('photo')) {
-            $doctorUpdate['photo'] = $request->file('photo')->store('doctors', 'public');
+            $doctorUpdate['photo'] = $this->storeUploadedFile($request->file('photo'), 'doctors');
         }
 
         if (!empty($doctorUpdate)) {

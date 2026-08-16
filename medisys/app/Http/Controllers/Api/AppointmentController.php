@@ -7,6 +7,8 @@ use App\Models\Appointment;
 use App\Models\Patient;
 use App\Services\BookingFraudService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 class AppointmentController extends Controller
@@ -75,27 +77,37 @@ class AppointmentController extends Controller
         
         $appointment = Appointment::create($validated);
         
-        // Detect fraud
-        $fraudService = new BookingFraudService();
-        $fraudResult = $fraudService->detectFraud(
-            $clientIp,
-            $input['patient_email'] ?? '',
-            $input['patient_phone'] ?? '',
-            $input['patient_id'] ?? null
-        );
-        
-        // Update appointment with fraud detection results
-        $appointment->update([
-            'is_suspicious' => $fraudResult['is_suspicious'],
-            'fraud_score' => $fraudResult['fraud_score'],
-            'fraud_reason' => $fraudResult['indicators'][0]['reason'] ?? null
-        ]);
-        
+        // Detect fraud — a failure here must not hide the created appointment,
+        // but it must be visible in the logs and in the response.
+        $fraudResult = null;
+        try {
+            $fraudService = new BookingFraudService();
+            $fraudResult = $fraudService->detectFraud(
+                $clientIp,
+                $input['patient_email'] ?? '',
+                $input['patient_phone'] ?? '',
+                $input['patient_id'] ?? null
+            );
+
+            $appointment->update([
+                'is_suspicious' => $fraudResult['is_suspicious'],
+                'fraud_score' => $fraudResult['fraud_score'],
+                'fraud_reason' => $fraudResult['indicators'][0]['reason'] ?? null
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Fraud detection failed for appointment', [
+                'appointment_id' => $appointment->id,
+                'ip'             => $clientIp,
+                'message'        => $e->getMessage(),
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Appointment scheduled.',
             'data'    => $appointment->load(['patient', 'doctor.user']),
-            'fraud_detection' => $fraudResult
+            'fraud_detection' => $fraudResult,
+            'fraud_detection_available' => $fraudResult !== null
         ], 201);
     }
 
@@ -135,7 +147,7 @@ class AppointmentController extends Controller
             ->exists();
         if ($isTaken) return response()->json(['success' => false, 'message' => 'Time slot taken.'], 422);
 
-        $doc = \App\Models\Doctor::find($validated['doctor_id']);
+        $doc = \App\Models\Doctor::findOrFail($validated['doctor_id']);
         $time = date('H:i:s', strtotime($validated['scheduled_at']));
         $day = date('l', strtotime($validated['scheduled_at']));
         if ($doc->working_days && !in_array($day, $doc->working_days)) return response()->json(['success'=>false, 'message'=>"Not working on {$day}"], 422);
@@ -177,13 +189,34 @@ class AppointmentController extends Controller
 
         // Verify reCAPTCHA with Google
         if ($recaptchaSecret && $request->filled('g-recaptcha-response')) {
-            $verify = @file_get_contents(
-                "https://www.google.com/recaptcha/api/siteverify?secret={$recaptchaSecret}"
-                . "&response=" . urlencode($request->input('g-recaptcha-response'))
-                . "&remoteip=" . $request->ip()
-            );
-            $keys = $verify ? json_decode($verify, true) : null;
-            if (!$keys || !($keys['success'] ?? false)) {
+            try {
+                $verification = Http::timeout(10)
+                    ->asForm()
+                    ->post('https://www.google.com/recaptcha/api/siteverify', [
+                        'secret'   => $recaptchaSecret,
+                        'response' => $request->input('g-recaptcha-response'),
+                        'remoteip' => $request->ip(),
+                    ])
+                    ->throw()
+                    ->json();
+            } catch (\Throwable $e) {
+                Log::error('Public booking: reCAPTCHA verification request failed', [
+                    'ip'      => $request->ip(),
+                    'message' => $e->getMessage(),
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Could not verify reCAPTCHA right now. Please try again in a moment.',
+                ], 503);
+            }
+
+            if (!($verification['success'] ?? false)) {
+                Log::warning('Public booking: reCAPTCHA verification rejected', [
+                    'ip'          => $request->ip(),
+                    'error_codes' => $verification['error-codes'] ?? [],
+                ]);
+
                 return response()->json(['success' => false, 'message' => 'reCAPTCHA verification failed.'], 422);
             }
         }
@@ -203,7 +236,7 @@ class AppointmentController extends Controller
             ->exists();
         if ($isTaken) return response()->json(['success' => false, 'message' => 'Time slot taken.'], 422);
 
-        $doc = \App\Models\Doctor::find($validated['doctor_id']);
+        $doc = \App\Models\Doctor::findOrFail($validated['doctor_id']);
         $time = date('H:i:s', strtotime($validated['scheduled_at']));
         $day = date('l', strtotime($validated['scheduled_at']));
         if ($doc->working_days && !in_array($day, $doc->working_days)) return response()->json(['success'=>false, 'message'=>"Not working on {$day}"], 422);

@@ -331,13 +331,11 @@ async function deleteOrdonnance(id) {
   if (!confirm('Are you sure you want to delete this prescription?')) return;
   try {
     const r = await fetch('/api/ordonnances/' + id, {method: 'DELETE', headers: h});
-    if (r.ok) {
-      init(); // refresh
-    } else {
-      alert('Failed to delete prescription');
-    }
+    if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
+    init(); // refresh
   } catch(e) {
-    console.error(e);
+    console.error('Delete prescription error:', e);
+    alert('Failed to delete prescription');
   }
 }
 

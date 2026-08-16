@@ -402,12 +402,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Load unread contact message count
         fetch('/api/contact-messages', {
           headers: {'Content-Type':'application/json','Accept':'application/json','Authorization':'Bearer '+(localStorage.getItem('auth_token')||'')}
-        }).then(r=>r.json()).then(data=>{
-          if (data.success && data.data.unread > 0) {
+        }).then(r=>{
+          if (!r.ok) throw new Error(`Request failed with status ${r.status}`);
+          return r.json();
+        }).then(data=>{
+          if (!data.success) throw new Error(data.message || 'Unread count unavailable');
+          if (data.data.unread > 0) {
             const badge = document.getElementById('nav-contact-badge');
             if (badge) { badge.textContent = data.data.unread; badge.style.display=''; }
           }
-        }).catch(()=>{});
+        }).catch(e=>console.error('Unread contact messages load error:', e));
       } else if (user.role === 'doctor') {
         document.querySelectorAll('.admin-only').forEach(el => {
           el.style.display = 'none';
@@ -434,7 +438,9 @@ document.addEventListener('DOMContentLoaded', () => {
           el.style.display = 'none';
         });
       }
-    } catch(e) {}
+    } catch(e) {
+      console.error('Sidebar role setup error:', e);
+    }
   }
 });
 

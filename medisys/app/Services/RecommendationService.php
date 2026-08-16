@@ -46,19 +46,27 @@ class RecommendationService
             if ($labAnalysis['success']) {
                 // Merge AI lab recommendations with existing recommendations
                 $recommendations = array_merge($recommendations, $labAnalysis['recommendations']);
+            } else {
+                Log::warning('Lab result analysis unavailable while generating recommendations', [
+                    'patient_id' => $patient->id,
+                    'error' => $labAnalysis['error'] ?? $labAnalysis['message'] ?? 'unknown',
+                ]);
             }
-            
+
             // Store recommendations in database
-            $this->storeRecommendations($patient->id, $recommendations);
+            $stored = $this->storeRecommendations($patient->id, $recommendations);
 
             return [
                 'success' => true,
-                'message' => 'Recommendations generated successfully',
+                'message' => $stored
+                    ? 'Recommendations generated successfully'
+                    : 'Recommendations generated but could not be saved for later reference',
+                'stored' => $stored,
                 'data' => $recommendations,
                 'lab_analysis' => $labAnalysis
             ];
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('RecommendationService error', [
                 'patient_id' => $patient->id,
                 'message' => $e->getMessage(),
@@ -258,8 +266,9 @@ class RecommendationService
      *
      * @param int $patientId
      * @param array $recommendations
+     * @return bool Whether the recommendations were persisted
      */
-    private function storeRecommendations(int $patientId, array $recommendations): void
+    private function storeRecommendations(int $patientId, array $recommendations): bool
     {
         try {
             foreach ($recommendations as $recommendation) {
@@ -281,11 +290,15 @@ class RecommendationService
                 'count' => count($recommendations)
             ]);
 
-        } catch (\Exception $e) {
+            return true;
+        } catch (\Throwable $e) {
             Log::error('Failed to store recommendations', [
                 'patient_id' => $patientId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
+
+            return false;
         }
     }
 

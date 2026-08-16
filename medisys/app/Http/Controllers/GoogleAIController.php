@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class GoogleAIController extends Controller
 {
@@ -18,14 +19,15 @@ class GoogleAIController extends Controller
             'message' => 'required|string'
         ]);
 
-        $apiKey = env('GEMINI_API_KEY', env('GOOGLE_API_KEY'));
+        $apiKey = config('services.gemini.key');
 
-        // Debug: Check if API key is available
         if (!$apiKey) {
+            Log::error('MedicalChat: Gemini API key is not configured');
+
             return response()->json([
-                'error' => 'API key not configured. Please add GOOGLE_API_KEY or GEMINI_API_KEY to your .env file.',
+                'error' => 'Chat bot is not configured.',
                 'reply' => 'Chat bot is not configured. Please contact administrator.'
-            ], 500);
+            ], 503);
         }
 
         $systemPrompt = "You are a medical assistant. Provide general medical advice only based on trusted sources. Do not provide diagnosis. Always recommend consulting a doctor.";
@@ -46,32 +48,39 @@ class GoogleAIController extends Controller
             $response = Http::timeout(30)->post($url, $payload);
 
             if ($response->failed()) {
-                $errorDetails = [
+                Log::error('MedicalChat: Gemini API request failed', [
                     'status' => $response->status(),
-                    'body' => $response->body(),
-                    'headers' => $response->headers()
-                ];
-                
+                    'body'   => $response->body(),
+                ]);
+
                 return response()->json([
-                    'error' => 'API request failed: ' . json_encode($errorDetails),
+                    'error' => 'The assistant service is unavailable.',
                     'reply' => 'Sorry, I am currently unavailable. Please try again later.'
-                ], 500);
+                ], 502);
             }
 
             $data = $response->json();
 
             if (isset($data['error'])) {
+                Log::error('MedicalChat: Gemini API returned an error', [
+                    'error' => $data['error'],
+                ]);
+
                 return response()->json([
-                    'error' => 'API Error: ' . json_encode($data['error']),
+                    'error' => 'The assistant service returned an error.',
                     'reply' => 'Sorry, I am currently unavailable. Please try again later.'
-                ], 500);
+                ], 502);
             }
 
             if (!isset($data['candidates'][0]['content']['parts'][0]['text'])) {
+                Log::error('MedicalChat: unexpected Gemini API response format', [
+                    'body' => $response->body(),
+                ]);
+
                 return response()->json([
-                    'error' => 'Invalid API response format: ' . json_encode($data),
+                    'error' => 'Unexpected response from the assistant service.',
                     'reply' => 'Sorry, I received an invalid response. Please try again later.'
-                ], 500);
+                ], 502);
             }
 
             $reply = $data['candidates'][0]['content']['parts'][0]['text'];
@@ -80,11 +89,16 @@ class GoogleAIController extends Controller
                 'reply' => $reply
             ]);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            Log::error('MedicalChat: exception while calling Gemini API', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
-                'error' => 'Exception: ' . $e->getMessage(),
+                'error' => 'Could not reach the assistant service.',
                 'reply' => 'Sorry, I am currently unavailable. Please try again later.'
-            ], 500);
+            ], 502);
         }
     }
 }

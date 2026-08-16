@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\StoresUploadedFiles;
 use App\Http\Controllers\Controller;
 use App\Models\LabResult;
 use App\Models\Patient;
@@ -10,6 +11,8 @@ use Illuminate\Support\Facades\Storage;
 
 class LabResultController extends Controller
 {
+    use StoresUploadedFiles;
+
     /** List lab results for a patient */
     public function index(Request $request)
     {
@@ -60,7 +63,7 @@ class LabResultController extends Controller
         $ext      = strtolower($file->getClientOriginalExtension());
         $fileType = in_array($ext, ['jpg','jpeg','png','gif']) ? 'image' : 'pdf';
 
-        $path = $file->store('lab-results', 'public');
+        $path = $this->storeUploadedFile($file, 'lab-results');
 
         $user = $request->user();
         $labId = null;
